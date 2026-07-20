@@ -79,6 +79,8 @@
     <!-- Matched existing item (read-only) -->
     <div id="match-card">
       <h2>Matched Item</h2>
+      <div id="match-badge" class="match-badge"></div>
+      <img id="match-photo" class="match-photo hidden" alt="Reference photo">
       <div class="match-info">
         <div class="match-row"><span class="match-label">Unique ID</span><span id="match-uniqueId"></span></div>
         <div class="match-row"><span class="match-label">Name</span><span id="match-name"></span></div>
@@ -87,7 +89,8 @@
         <div class="match-row"><span class="match-label">Location</span><span id="match-location"></span></div>
       </div>
       <div class="result-actions">
-        <button class="btn btn-primary" id="btn-edit-match">Edit</button>
+        <button class="btn btn-primary" id="btn-sell-one">Sell 1</button>
+        <button class="btn btn-secondary" id="btn-edit-match">Edit</button>
         <button class="btn btn-secondary" id="btn-not-a-match">Not a match — New Item</button>
         <button class="btn btn-secondary" id="btn-discard-match">Discard</button>
       </div>
@@ -132,6 +135,9 @@
         </button>
         <button class="btn btn-success" id="btn-stripe">
           Save + Stripe
+        </button>
+        <button class="btn btn-success" id="btn-square">
+          Send to Square POS
         </button>
         <button class="btn btn-secondary" id="btn-discard">Discard</button>
       </div>

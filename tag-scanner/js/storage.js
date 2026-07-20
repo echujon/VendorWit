@@ -38,6 +38,35 @@ export function findByUniqueId(ocrText) {
   return getRecords().find(r => r.uniqueId && text.includes(r.uniqueId.toLowerCase())) || null;
 }
 
+export const VISUAL_MATCH_THRESHOLD = 0.85;
+
+export function cosineSimilarity(a, b) {
+  if (!a || !b || a.length !== b.length || a.length === 0) return 0;
+  let dot = 0, normA = 0, normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  if (normA === 0 || normB === 0) return 0;
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+// source is 'gemini' or 'clip' — embeddings from different models live in
+// different vector spaces, so matching only ever compares same-source vectors.
+export function findByVisualMatch(queryEmbedding, source) {
+  const field = source === 'gemini' ? 'embeddingGemini' : 'embeddingClip';
+  let best = null;
+  for (const record of getRecords()) {
+    const candidate = record[field];
+    if (!candidate || !candidate.length) continue;
+    const score = cosineSimilarity(queryEmbedding, candidate);
+    if (!best || score > best.score) best = { record, score };
+  }
+  if (best && best.score >= VISUAL_MATCH_THRESHOLD) return best;
+  return null;
+}
+
 export function exportCSV() {
   const records = getRecords();
   const rows = [['Unique ID', 'Name', 'Price', 'Quantity', 'Location', 'Stripe ID', 'Date']];

@@ -1,4 +1,5 @@
-import { getRecords, saveRecord, updateRecord, deleteRecord, exportCSV, getSettings, findByUniqueId } from './storage.js';
+import { getRecords, saveRecord, updateRecord, deleteRecord, exportCSV, getSettings, findByUniqueId, findByVisualMatch } from './storage.js';
+import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0/+esm';
 
 // --- State ---
 let stream = null;
@@ -33,11 +34,13 @@ const btnUpload = document.getElementById('btn-upload');
 const btnNewItem = document.getElementById('btn-new-item');
 const btnDiscardScan = document.getElementById('btn-discard-scan');
 const btnEditMatch = document.getElementById('btn-edit-match');
+const btnSellOne = document.getElementById('btn-sell-one');
 const btnNotAMatch = document.getElementById('btn-not-a-match');
 const btnDiscardMatch = document.getElementById('btn-discard-match');
 const btnUseSelection = document.getElementById('btn-use-selection');
 const btnSave = document.getElementById('btn-save');
 const btnStripe = document.getElementById('btn-stripe');
+const btnSquare = document.getElementById('btn-square');
 const btnDiscard = document.getElementById('btn-discard');
 const btnExport = document.getElementById('btn-export');
 const fileInput = document.getElementById('file-input');
@@ -148,23 +151,31 @@ async function processImage(blob) {
   try {
     rawText = await runOCR(blob);
   } catch (err) {
-    hideStatus();
-    toast('OCR failed: ' + err.message, 'error');
-    return;
+    console.warn('OCR failed:', err);
+    rawText = '';
   }
 
-  if (!rawText.trim()) {
-    hideStatus();
-    toast('No text detected — try better lighting', 'error');
-    return;
-  }
-
-  hideStatus();
   lastRawText = rawText;
 
-  const existing = findByUniqueId(rawText);
-  if (existing) {
-    showMatchCard(existing);
+  const textMatch = rawText.trim() ? findByUniqueId(rawText) : null;
+  if (textMatch) {
+    hideStatus();
+    showMatchCard(textMatch, 'text');
+    return;
+  }
+
+  // No text match (or no text at all, e.g. an untagged handmade item) —
+  // try appearance-based matching before falling back to "no match".
+  showStatus('Checking appearance...');
+  const embeddings = await embedImage(blob);
+  let visualMatch = null;
+  if (embeddings.gemini) visualMatch = findByVisualMatch(embeddings.gemini, 'gemini');
+  if (!visualMatch && embeddings.clip) visualMatch = findByVisualMatch(embeddings.clip, 'clip');
+
+  hideStatus();
+
+  if (visualMatch) {
+    showMatchCard(visualMatch.record, 'visual', visualMatch.score);
   } else {
     showNoMatchCard(rawText);
   }
@@ -182,13 +193,27 @@ function showNoMatchCard(rawText) {
   noMatchCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-function showMatchCard(record) {
+function showMatchCard(record, matchType = 'text', score = null) {
   matchedRecord = record;
   document.getElementById('match-uniqueId').textContent = record.uniqueId || '—';
   document.getElementById('match-name').textContent = record.name || '—';
   document.getElementById('match-price').textContent = record.price ? `$${record.price}` : '—';
   document.getElementById('match-quantity').textContent = record.quantity || '—';
   document.getElementById('match-location').textContent = record.location || '—';
+
+  const badge = document.getElementById('match-badge');
+  badge.textContent = matchType === 'visual'
+    ? `Matched by appearance (${Math.round(score * 100)}%)`
+    : 'Matched by tag';
+
+  const photo = document.getElementById('match-photo');
+  if (record.photoDataUrl) {
+    photo.src = record.photoDataUrl;
+    photo.classList.remove('hidden');
+  } else {
+    photo.classList.add('hidden');
+  }
+
   matchCard.classList.add('visible');
   matchCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
@@ -305,6 +330,130 @@ async function runTesseractOCR(blob) {
   return result.data.text;
 }
 
+// --- Visual matching (appearance-based, for untagged items) ---
+// Gemini and CLIP embeddings live in different vector spaces, so a record
+// stores both when available and matching only ever compares same-source
+// vectors (see findByVisualMatch in storage.js).
+const GEMINI_EMBED_DIMENSIONS = 768;
+let clipPipelinePromise = null;
+
+async function blobToBase64(blob) {
+  const arrayBuffer = await blob.arrayBuffer();
+  const uint8Array = new Uint8Array(arrayBuffer);
+  let binaryString = '';
+  for (let i = 0; i < uint8Array.length; i++) {
+    binaryString += String.fromCharCode(uint8Array[i]);
+  }
+  return btoa(binaryString);
+}
+
+async function embedImageGemini(blob) {
+  try {
+    const apiKey = localStorage.getItem('gemini_api_key');
+    if (!apiKey) return null;
+
+    const base64 = await blobToBase64(blob);
+
+    const describeRes = await fetch(
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=' + apiKey,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { inlineData: { mimeType: 'image/jpeg', data: base64 } },
+              { text: 'Describe this small handmade item\'s visual appearance in detail for the purpose of matching it against photos of other similar items: shape, color palette, pattern, texture, and any distinctive marks. Be specific and consistent.' }
+            ]
+          }],
+          generationConfig: { mediaResolution: 'MEDIA_RESOLUTION_LOW' }
+        })
+      }
+    );
+    if (!describeRes.ok) {
+      console.warn('Gemini vision call failed:', describeRes.status, await describeRes.text());
+      return null;
+    }
+    const describeData = await describeRes.json();
+    const description = describeData.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    if (!description.trim()) return null;
+
+    const embedRes = await fetch(
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:embedContent?key=' + apiKey,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: { parts: [{ text: description }] },
+          output_dimensionality: GEMINI_EMBED_DIMENSIONS
+        })
+      }
+    );
+    if (!embedRes.ok) {
+      console.warn('Gemini embedContent call failed:', embedRes.status, await embedRes.text());
+      return null;
+    }
+    const embedData = await embedRes.json();
+    return embedData.embedding?.values || null;
+  } catch (err) {
+    console.warn('Gemini image embedding failed:', err);
+    return null;
+  }
+}
+
+function getClipPipeline() {
+  if (!clipPipelinePromise) {
+    clipPipelinePromise = pipeline('image-feature-extraction', 'Xenova/clip-vit-base-patch32', { dtype: 'q8' });
+  }
+  return clipPipelinePromise;
+}
+
+async function embedImageClip(blob) {
+  try {
+    showStatus('Loading offline image model...');
+    const extractor = await getClipPipeline();
+    const url = URL.createObjectURL(blob);
+    try {
+      const output = await extractor(url, { pooling: 'mean', normalize: true });
+      return Array.from(output.data);
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  } catch (err) {
+    console.warn('CLIP image embedding failed:', err);
+    return null;
+  }
+}
+
+async function embedImage(blob) {
+  const [gemini, clip] = await Promise.all([
+    embedImageGemini(blob),
+    embedImageClip(blob)
+  ]);
+  return { gemini, clip };
+}
+
+function resizeImageToDataUrl(blob, maxDim = 256, quality = 0.7) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(blob);
+    img.onload = () => {
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('Failed to load image for resizing'));
+    };
+    img.src = url;
+  });
+}
+
 // --- Stripe ---
 async function pushToStripe(record) {
   const { stripeKey } = getSettings();
@@ -349,6 +498,56 @@ async function pushToStripe(record) {
   return { productId: product.id, priceId: price.id };
 }
 
+// --- Square POS ---
+// Deep-links into the Square Point of Sale app via its documented URL scheme (iOS)
+// / Intent (Android). There's no reliable way for a plain website (as opposed to a
+// native app with a registered URL scheme) to receive Square's charge-result
+// callback, so this only launches POS pre-filled with the amount — it doesn't
+// confirm the charge completed. Verify param names against Square's current docs
+// (developer.squareup.com) before relying on this in production.
+function detectMobilePlatform() {
+  const ua = navigator.userAgent || '';
+  if (/iPhone|iPad|iPod/i.test(ua)) return 'ios';
+  if (/Android/i.test(ua)) return 'android';
+  return null;
+}
+
+function launchSquarePOS(record) {
+  const { squareAppId } = getSettings();
+  if (!squareAppId) throw new Error('No Square Application ID configured (Settings)');
+
+  const amount = Math.round(parseFloat(record.price) * 100);
+  if (isNaN(amount) || amount <= 0) throw new Error('Invalid price');
+
+  const platform = detectMobilePlatform();
+  const callbackUrl = window.location.href;
+
+  if (platform === 'ios') {
+    const payload = {
+      amount_money: { amount, currency_code: 'USD' },
+      callback_url: callbackUrl,
+      client_id: squareAppId,
+      version: '1.3',
+      notes: record.name || '',
+      options: { supported_tender_types: ['CREDIT_CARD', 'CASH', 'OTHER'] }
+    };
+    window.location.href = 'square-commerce-v1://payment/create?data=' + encodeURIComponent(JSON.stringify(payload));
+  } else if (platform === 'android') {
+    const extras = [
+      `S.browser_fallback_url=${encodeURIComponent(callbackUrl)}`,
+      `S.com.squareup.pos.CLIENT_ID=${encodeURIComponent(squareAppId)}`,
+      'S.com.squareup.pos.API_VERSION=v2.0',
+      `i.com.squareup.pos.TOTAL_AMOUNT=${amount}`,
+      'S.com.squareup.pos.CURRENCY_CODE=USD',
+      'S.com.squareup.pos.TENDER_TYPES=com.squareup.pos.TENDER_CARD,com.squareup.pos.TENDER_CASH',
+      record.name ? `S.com.squareup.pos.NOTE=${encodeURIComponent(record.name)}` : null
+    ].filter(Boolean).join(';');
+    window.location.href = `intent://com.squareup.pos.action.CHARGE#Intent;action=com.squareup.pos.action.CHARGE;package=com.squareup;${extras};end`;
+  } else {
+    throw new Error('Square POS launch only works on an iPhone or Android phone with the Square Point of Sale app installed');
+  }
+}
+
 // --- No-match card actions ---
 btnNewItem.addEventListener('click', () => {
   showNewItemForm(lastRawText);
@@ -359,6 +558,16 @@ btnDiscardScan.addEventListener('click', resetScanArea);
 // --- Match card actions ---
 btnEditMatch.addEventListener('click', () => {
   showNewItemForm(lastRawText, matchedRecord);
+});
+
+btnSellOne.addEventListener('click', () => {
+  if (!matchedRecord) return;
+  const newQty = Math.max(0, (parseInt(matchedRecord.quantity, 10) || 0) - 1);
+  updateRecord(matchedRecord.id, { quantity: String(newQty) });
+  matchedRecord = { ...matchedRecord, quantity: String(newQty) };
+  document.getElementById('match-quantity').textContent = String(newQty);
+  renderRecords();
+  toast(`Sold — ${newQty} left`, 'success');
 });
 
 btnNotAMatch.addEventListener('click', () => {
@@ -386,9 +595,27 @@ function collectFormData() {
   };
 }
 
-btnSave.addEventListener('click', () => {
-  const data = collectFormData();
-  if (!data.uniqueId) { toast('Set a unique identifier first', 'error'); return; }
+// Attaches a reference photo + appearance embeddings to a new/edited record,
+// captured from whatever photo is currently loaded (capturedBlob) — this is
+// the "photograph it once when adding to inventory" step for untagged items.
+async function attachVisualData(data) {
+  if (!capturedBlob) return data;
+  showStatus('Analyzing photo...');
+  const [photoDataUrl, embeddings] = await Promise.all([
+    resizeImageToDataUrl(capturedBlob).catch(() => null),
+    embedImage(capturedBlob)
+  ]);
+  hideStatus();
+  return {
+    ...data,
+    photoDataUrl: photoDataUrl || data.photoDataUrl,
+    embeddingGemini: embeddings.gemini || data.embeddingGemini,
+    embeddingClip: embeddings.clip || data.embeddingClip
+  };
+}
+
+btnSave.addEventListener('click', async () => {
+  const data = await attachVisualData(collectFormData());
   if (!data.name && !data.price) { toast('Add a name or price first', 'error'); return; }
   const editId = resultCard.dataset.editId ? Number(resultCard.dataset.editId) : null;
   if (editId) {
@@ -402,8 +629,7 @@ btnSave.addEventListener('click', () => {
 });
 
 btnStripe.addEventListener('click', async () => {
-  const data = collectFormData();
-  if (!data.uniqueId) { toast('Set a unique identifier first', 'error'); return; }
+  const data = await attachVisualData(collectFormData());
   if (!data.name || !data.price) { toast('Name and price required', 'error'); return; }
   btnStripe.disabled = true;
   showStatus('Pushing to Stripe...');
@@ -425,6 +651,17 @@ btnStripe.addEventListener('click', async () => {
     toast('Stripe error: ' + err.message, 'error');
   } finally {
     btnStripe.disabled = false;
+  }
+});
+
+btnSquare.addEventListener('click', () => {
+  const data = collectFormData();
+  if (!data.uniqueId) { toast('Set a unique identifier first', 'error'); return; }
+  if (!data.name || !data.price) { toast('Name and price required', 'error'); return; }
+  try {
+    launchSquarePOS(data);
+  } catch (err) {
+    toast('Square POS error: ' + err.message, 'error');
   }
 });
 
