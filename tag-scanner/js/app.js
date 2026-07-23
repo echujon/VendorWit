@@ -552,7 +552,7 @@ function launchSquarePOS(record) {
       'S.com.squareup.pos.TENDER_TYPES=com.squareup.pos.TENDER_CARD,com.squareup.pos.TENDER_CASH',
       record.name ? `S.com.squareup.pos.NOTE=${encodeURIComponent(record.name)}` : null
     ].filter(Boolean).join(';');
-    window.location.href = `intent://com.squareup.pos.action.CHARGE#Intent;action=com.squareup.pos.action.CHARGE;package=com.squareup;${extras};end`;
+    window.location.href = `intent:#Intent;action=com.squareup.pos.action.CHARGE;package=com.squareup;${extras};end`;
   } else {
     throw new Error('Square POS launch only works on an iPhone or Android phone with the Square Point of Sale app installed');
   }
