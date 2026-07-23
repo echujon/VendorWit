@@ -678,7 +678,6 @@ btnStripe.addEventListener('click', async () => {
 
 btnSquare.addEventListener('click', () => {
   const data = collectFormData();
-  if (!data.uniqueId) { toast('Set a unique identifier first', 'error'); return; }
   if (!data.name || !data.price) { toast('Name and price required', 'error'); return; }
   try {
     launchSquarePOS(data);
