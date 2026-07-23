@@ -236,6 +236,9 @@ main { flex: 1; padding: 1.25rem; display: flex; flex-direction: column; gap: 1.
 }
 .match-photo.hidden { display: none; }
 
+#square-pos-link { display: block; color: var(--brand-dark); }
+#square-pos-link.hidden { display: none; }
+
 .match-info { display: flex; flex-direction: column; gap: 0.6rem; margin-bottom: 1.25rem; }
 .match-row { display: flex; justify-content: space-between; gap: 1rem; font-size: 0.95rem; }
 .match-label { color: var(--muted); font-weight: 600; }

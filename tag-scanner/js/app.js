@@ -36,6 +36,8 @@ const btnNewItem = document.getElementById('btn-new-item');
 const btnDiscardScan = document.getElementById('btn-discard-scan');
 const btnEditMatch = document.getElementById('btn-edit-match');
 const btnSellOne = document.getElementById('btn-sell-one');
+const btnSquareMatch = document.getElementById('btn-square-match');
+const squarePosLink = document.getElementById('square-pos-link');
 const btnNotAMatch = document.getElementById('btn-not-a-match');
 const btnDiscardMatch = document.getElementById('btn-discard-match');
 const btnUseSelection = document.getElementById('btn-use-selection');
@@ -215,6 +217,10 @@ function showMatchCard(record, matchType = 'text', score = null) {
 
   // "Not a match" only makes sense when this came from a live scan.
   btnNotAMatch.style.display = matchType === 'saved' ? 'none' : '';
+
+  squarePosLink.classList.add('hidden');
+  squarePosLink.textContent = '';
+  squarePosLink.removeAttribute('href');
 
   const photo = document.getElementById('match-photo');
   if (record.photoDataUrl) {
@@ -522,7 +528,7 @@ function detectMobilePlatform() {
   return null;
 }
 
-function launchSquarePOS(record) {
+function buildSquarePOSUrl(record) {
   const { squareAppId } = getSettings();
   if (!squareAppId) throw new Error('No Square Application ID configured (Settings)');
 
@@ -541,10 +547,11 @@ function launchSquarePOS(record) {
       notes: record.name || '',
       options: { supported_tender_types: ['CREDIT_CARD', 'CASH', 'OTHER'] }
     };
-    window.location.href = 'square-commerce-v1://payment/create?data=' + encodeURIComponent(JSON.stringify(payload));
+    return 'square-commerce-v1://payment/create?data=' + encodeURIComponent(JSON.stringify(payload));
   } else if (platform === 'android') {
     const extras = [
       `S.browser_fallback_url=${encodeURIComponent(callbackUrl)}`,
+      `S.com.squareup.pos.WEB_CALLBACK_URI=${encodeURIComponent(callbackUrl)}`,
       `S.com.squareup.pos.CLIENT_ID=${encodeURIComponent(squareAppId)}`,
       'S.com.squareup.pos.API_VERSION=v2.0',
       `i.com.squareup.pos.TOTAL_AMOUNT=${amount}`,
@@ -552,10 +559,14 @@ function launchSquarePOS(record) {
       'S.com.squareup.pos.TENDER_TYPES=com.squareup.pos.TENDER_CARD,com.squareup.pos.TENDER_CASH',
       record.name ? `S.com.squareup.pos.NOTE=${encodeURIComponent(record.name)}` : null
     ].filter(Boolean).join(';');
-    window.location.href = `intent:#Intent;action=com.squareup.pos.action.CHARGE;package=com.squareup;${extras};end`;
+    return `intent:#Intent;action=com.squareup.pos.action.CHARGE;package=com.squareup;${extras};end`;
   } else {
     throw new Error('Square POS launch only works on an iPhone or Android phone with the Square Point of Sale app installed');
   }
+}
+
+function launchSquarePOS(record) {
+  window.location.href = buildSquarePOSUrl(record);
 }
 
 // --- No-match card actions ---
@@ -591,6 +602,19 @@ function sellOne() {
 
 btnSellOne.addEventListener('click', sellOne);
 document.getElementById('match-quantity').addEventListener('click', sellOne);
+
+btnSquareMatch.addEventListener('click', () => {
+  if (!matchedRecord) return;
+  try {
+    const url = buildSquarePOSUrl(matchedRecord);
+    squarePosLink.href = url;
+    squarePosLink.textContent = url;
+    squarePosLink.classList.remove('hidden');
+    squarePosLink.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  } catch (err) {
+    toast('Square POS error: ' + err.message, 'error');
+  }
+});
 
 btnNotAMatch.addEventListener('click', () => {
   matchedRecord = null;
