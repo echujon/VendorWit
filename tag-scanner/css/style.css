@@ -125,6 +125,17 @@ main { flex: 1; padding: 1.25rem; display: flex; flex-direction: column; gap: 1.
   gap: 0.75rem;
 }
 
+.no-tag-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 1rem 1rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  cursor: pointer;
+}
+.no-tag-toggle input { flex-shrink: 0; }
+
 /* Buttons */
 .btn {
   flex: 1;
@@ -229,6 +240,13 @@ main { flex: 1; padding: 1.25rem; display: flex; flex-direction: column; gap: 1.
 .match-row { display: flex; justify-content: space-between; gap: 1rem; font-size: 0.95rem; }
 .match-label { color: var(--muted); font-weight: 600; }
 
+#match-quantity {
+  cursor: pointer;
+  border-bottom: 1px dashed var(--brand);
+  color: var(--brand-dark);
+  font-weight: 600;
+}
+
 .field-group { display: flex; flex-direction: column; gap: 0.875rem; margin-bottom: 1.25rem; }
 
 .field label {
@@ -292,6 +310,7 @@ main { flex: 1; padding: 1.25rem; display: flex; flex-direction: column; gap: 1.
   gap: 0.75rem;
   border-bottom: 1px solid var(--border);
   transition: background 0.1s;
+  cursor: pointer;
 }
 .record-item:last-child { border-bottom: none; }
 .record-item:hover { background: var(--bg); }

@@ -55,6 +55,10 @@
           Upload
         </button>
       </div>
+      <label class="no-tag-toggle">
+        <input type="checkbox" id="skip-ocr-toggle">
+        No tag on this item — skip straight to appearance matching
+      </label>
     </div>
 
     <input type="file" id="file-input" accept="image/*" style="display:none">
@@ -78,7 +82,7 @@
 
     <!-- Matched existing item (read-only) -->
     <div id="match-card">
-      <h2>Matched Item</h2>
+      <h2 id="match-card-title">Matched Item</h2>
       <div id="match-badge" class="match-badge"></div>
       <img id="match-photo" class="match-photo hidden" alt="Reference photo">
       <div class="match-info">
@@ -92,7 +96,7 @@
         <button class="btn btn-primary" id="btn-sell-one">Sell 1</button>
         <button class="btn btn-secondary" id="btn-edit-match">Edit</button>
         <button class="btn btn-secondary" id="btn-not-a-match">Not a match — New Item</button>
-        <button class="btn btn-secondary" id="btn-discard-match">Discard</button>
+        <button class="btn btn-secondary" id="btn-discard-match">Close</button>
       </div>
     </div>
 

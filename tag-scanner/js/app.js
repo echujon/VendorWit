@@ -25,6 +25,7 @@ const ocrRaw = document.getElementById('ocr-raw');
 const ocrRawSelectable = document.getElementById('ocr-raw-selectable');
 const recordsList = document.getElementById('records-list');
 const scanOverlay = document.querySelector('.scan-overlay');
+const skipOcrToggle = document.getElementById('skip-ocr-toggle');
 const scanPlaceholder = document.querySelector('.scan-placeholder');
 
 // --- Buttons ---
@@ -145,14 +146,17 @@ let lastRawText = '';
 
 async function processImage(blob) {
   hideAllResultCards();
-  showStatus('Running OCR...');
 
+  const skipOcr = skipOcrToggle.checked;
   let rawText = '';
-  try {
-    rawText = await runOCR(blob);
-  } catch (err) {
-    console.warn('OCR failed:', err);
-    rawText = '';
+  if (!skipOcr) {
+    showStatus('Running OCR...');
+    try {
+      rawText = await runOCR(blob);
+    } catch (err) {
+      console.warn('OCR failed:', err);
+      rawText = '';
+    }
   }
 
   lastRawText = rawText;
@@ -195,6 +199,7 @@ function showNoMatchCard(rawText) {
 
 function showMatchCard(record, matchType = 'text', score = null) {
   matchedRecord = record;
+  document.getElementById('match-card-title').textContent = matchType === 'saved' ? 'Item Details' : 'Matched Item';
   document.getElementById('match-uniqueId').textContent = record.uniqueId || '—';
   document.getElementById('match-name').textContent = record.name || '—';
   document.getElementById('match-price').textContent = record.price ? `$${record.price}` : '—';
@@ -204,7 +209,12 @@ function showMatchCard(record, matchType = 'text', score = null) {
   const badge = document.getElementById('match-badge');
   badge.textContent = matchType === 'visual'
     ? `Matched by appearance (${Math.round(score * 100)}%)`
-    : 'Matched by tag';
+    : matchType === 'saved'
+      ? 'Saved item'
+      : 'Matched by tag';
+
+  // "Not a match" only makes sense when this came from a live scan.
+  btnNotAMatch.style.display = matchType === 'saved' ? 'none' : '';
 
   const photo = document.getElementById('match-photo');
   if (record.photoDataUrl) {
@@ -363,7 +373,7 @@ async function embedImageGemini(blob) {
           contents: [{
             parts: [
               { inlineData: { mimeType: 'image/jpeg', data: base64 } },
-              { text: 'Describe this small handmade item\'s visual appearance in detail for the purpose of matching it against photos of other similar items: shape, color palette, pattern, texture, and any distinctive marks. Be specific and consistent.' }
+              { text: 'Describe ONLY theitem that is the main subject of this photo — its visual appearance for the purpose of matching it against photos of other similar items: shape, color palette, pattern, texture, and any distinctive marks. Do not mention the background, surface, hand, or anything else the item is resting on or being held by — describe the item as if it were isolated on its own. Be specific and consistent.' }
             ]
           }],
           generationConfig: { mediaResolution: 'MEDIA_RESOLUTION_LOW' }
@@ -560,7 +570,7 @@ btnEditMatch.addEventListener('click', () => {
   showNewItemForm(lastRawText, matchedRecord);
 });
 
-btnSellOne.addEventListener('click', () => {
+function sellOne() {
   if (!matchedRecord) return;
   const newQty = Math.max(0, (parseInt(matchedRecord.quantity, 10) || 0) - 1);
   updateRecord(matchedRecord.id, { quantity: String(newQty) });
@@ -568,7 +578,19 @@ btnSellOne.addEventListener('click', () => {
   document.getElementById('match-quantity').textContent = String(newQty);
   renderRecords();
   toast(`Sold — ${newQty} left`, 'success');
-});
+
+  const { squareAppId } = getSettings();
+  if (squareAppId) {
+    try {
+      launchSquarePOS(matchedRecord);
+    } catch (err) {
+      toast('Square POS error: ' + err.message, 'error');
+    }
+  }
+}
+
+btnSellOne.addEventListener('click', sellOne);
+document.getElementById('match-quantity').addEventListener('click', sellOne);
 
 btnNotAMatch.addEventListener('click', () => {
   matchedRecord = null;
@@ -697,22 +719,31 @@ function renderRecords() {
   `).join('');
 }
 
-recordsList.addEventListener('click', async e => {
-  const id = Number(e.target.dataset.id);
-  if (!id) return;
+function viewRecord(id) {
+  const record = getRecords().find(r => r.id === id);
+  if (!record) return;
+  hideAllResultCards();
+  lastRawText = '';
+  showMatchCard(record, 'saved');
+}
 
-  if (e.target.classList.contains('delete')) {
+recordsList.addEventListener('click', async e => {
+  const btn = e.target.closest('.record-btn');
+  const item = e.target.closest('.record-item');
+  if (!item) return;
+  const id = Number(item.dataset.id);
+
+  if (btn?.classList.contains('delete')) {
     deleteRecord(id);
     renderRecords();
     return;
   }
 
-  if (e.target.classList.contains('push-stripe')) {
-    const records = getRecords();
-    const record = records.find(r => r.id === id);
+  if (btn?.classList.contains('push-stripe')) {
+    const record = getRecords().find(r => r.id === id);
     if (!record) return;
-    e.target.disabled = true;
-    e.target.textContent = '...';
+    btn.disabled = true;
+    btn.textContent = '...';
     showStatus('Pushing to Stripe...');
     try {
       const ids = await pushToStripe(record);
@@ -723,9 +754,14 @@ recordsList.addEventListener('click', async e => {
     } catch (err) {
       hideStatus();
       toast('Stripe error: ' + err.message, 'error');
-      e.target.disabled = false;
-      e.target.textContent = '→ Stripe';
+      btn.disabled = false;
+      btn.textContent = '→ Stripe';
     }
+    return;
+  }
+
+  if (!btn) {
+    viewRecord(id);
   }
 });
 
