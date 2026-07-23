@@ -37,7 +37,6 @@ const btnDiscardScan = document.getElementById('btn-discard-scan');
 const btnEditMatch = document.getElementById('btn-edit-match');
 const btnSellOne = document.getElementById('btn-sell-one');
 const btnSquareMatch = document.getElementById('btn-square-match');
-const squarePosLink = document.getElementById('square-pos-link');
 const btnNotAMatch = document.getElementById('btn-not-a-match');
 const btnDiscardMatch = document.getElementById('btn-discard-match');
 const btnUseSelection = document.getElementById('btn-use-selection');
@@ -217,10 +216,6 @@ function showMatchCard(record, matchType = 'text', score = null) {
 
   // "Not a match" only makes sense when this came from a live scan.
   btnNotAMatch.style.display = matchType === 'saved' ? 'none' : '';
-
-  squarePosLink.classList.add('hidden');
-  squarePosLink.textContent = '';
-  squarePosLink.removeAttribute('href');
 
   const photo = document.getElementById('match-photo');
   if (record.photoDataUrl) {
@@ -606,11 +601,7 @@ document.getElementById('match-quantity').addEventListener('click', sellOne);
 btnSquareMatch.addEventListener('click', () => {
   if (!matchedRecord) return;
   try {
-    const url = buildSquarePOSUrl(matchedRecord);
-    squarePosLink.href = url;
-    squarePosLink.textContent = url;
-    squarePosLink.classList.remove('hidden');
-    squarePosLink.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    launchSquarePOS(matchedRecord);
   } catch (err) {
     toast('Square POS error: ' + err.message, 'error');
   }
