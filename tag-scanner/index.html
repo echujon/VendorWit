@@ -92,9 +92,12 @@
         <div class="match-row"><span class="match-label">Quantity</span><span id="match-quantity"></span></div>
         <div class="match-row"><span class="match-label">Location</span><span id="match-location"></span></div>
       </div>
+      <img id="venmo-qr" class="match-photo hidden" alt="Venmo payment QR code">
       <div class="result-actions">
         <button class="btn btn-primary" id="btn-sell-one">Sell 1</button>
+        <button class="btn btn-secondary" id="btn-add-to-cart">Add to Cart</button>
         <button class="btn btn-secondary" id="btn-square-match">Send to Square POS</button>
+        <button class="btn btn-secondary" id="btn-venmo-match">Venmo QR</button>
         <button class="btn btn-secondary" id="btn-edit-match">Edit</button>
         <button class="btn btn-secondary" id="btn-not-a-match">Not a match — New Item</button>
         <button class="btn btn-secondary" id="btn-discard-match">Close</button>
@@ -148,11 +151,30 @@
       </div>
     </div>
 
+    <!-- Cart -->
+    <div id="cart-section" style="display:none">
+      <h2>
+        Cart
+        <span id="cart-total-display"></span>
+      </h2>
+      <div id="cart-list"></div>
+      <div class="result-actions" style="padding:1rem;">
+        <button class="btn btn-secondary" id="btn-cart-venmo">Venmo QR</button>
+        <button class="btn btn-secondary" id="btn-cart-square">Send to Square POS</button>
+        <button class="btn btn-primary" id="btn-cart-complete">Complete Sale</button>
+        <button class="btn btn-secondary" id="btn-cart-clear">Clear Cart</button>
+      </div>
+      <img id="cart-venmo-qr" class="match-photo hidden" alt="Venmo payment QR code" style="margin:0 1rem 1rem;width:calc(100% - 2rem);">
+    </div>
+
     <!-- Records -->
     <div id="records-section">
       <h2>
         Records
-        <button class="btn btn-outline" id="btn-export" style="font-size:0.8rem;padding:0.35rem 0.75rem;">Export CSV</button>
+        <span style="display:flex;gap:0.5rem;">
+          <button class="btn btn-outline" id="btn-seed-test" style="display:none;font-size:0.8rem;padding:0.35rem 0.75rem;">Seed Test Data</button>
+          <button class="btn btn-outline" id="btn-export" style="font-size:0.8rem;padding:0.35rem 0.75rem;">Export CSV</button>
+        </span>
       </h2>
       <div id="records-list"></div>
     </div>

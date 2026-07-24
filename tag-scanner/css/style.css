@@ -278,14 +278,14 @@ main { flex: 1; padding: 1.25rem; display: flex; flex-direction: column; gap: 1.
 .result-actions .btn { flex: 1; min-width: 120px; }
 
 /* Records list */
-#records-section {
+#records-section, #cart-section {
   background: var(--surface);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   overflow: hidden;
 }
 
-#records-section h2 {
+#records-section h2, #cart-section h2 {
   font-size: 0.95rem;
   color: var(--muted);
   padding: 1rem 1.25rem 0.75rem;
@@ -301,7 +301,9 @@ main { flex: 1; padding: 1.25rem; display: flex; flex-direction: column; gap: 1.
   flex: unset;
 }
 
-#records-list { padding: 0.5rem 0; max-height: 320px; overflow-y: auto; }
+#cart-total-display { font-weight: 700; color: var(--brand-dark); font-size: 0.95rem; }
+
+#records-list, #cart-list { padding: 0.5rem 0; max-height: 320px; overflow-y: auto; }
 
 .record-item {
   display: flex;

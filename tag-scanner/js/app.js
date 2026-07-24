@@ -1,11 +1,13 @@
 import { getRecords, saveRecord, updateRecord, deleteRecord, exportCSV, getSettings, findByUniqueId, findByVisualMatch } from './storage.js';
 import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0/+esm';
+import QRCode from 'https://cdn.jsdelivr.net/npm/qrcode@1.5.4/+esm';
 
 // --- State ---
 let stream = null;
 let capturedBlob = null;
 let cameraActive = false;
 let matchedRecord = null;
+let cart = []; // { id, name, price, quantity } — quantity here is units being sold, not inventory
 
 // --- DOM ---
 const video = document.getElementById('video');
@@ -37,6 +39,17 @@ const btnDiscardScan = document.getElementById('btn-discard-scan');
 const btnEditMatch = document.getElementById('btn-edit-match');
 const btnSellOne = document.getElementById('btn-sell-one');
 const btnSquareMatch = document.getElementById('btn-square-match');
+const btnVenmoMatch = document.getElementById('btn-venmo-match');
+const venmoQr = document.getElementById('venmo-qr');
+const btnAddToCart = document.getElementById('btn-add-to-cart');
+const cartSection = document.getElementById('cart-section');
+const cartList = document.getElementById('cart-list');
+const cartTotalDisplay = document.getElementById('cart-total-display');
+const cartVenmoQr = document.getElementById('cart-venmo-qr');
+const btnCartVenmo = document.getElementById('btn-cart-venmo');
+const btnCartSquare = document.getElementById('btn-cart-square');
+const btnCartComplete = document.getElementById('btn-cart-complete');
+const btnCartClear = document.getElementById('btn-cart-clear');
 const btnNotAMatch = document.getElementById('btn-not-a-match');
 const btnDiscardMatch = document.getElementById('btn-discard-match');
 const btnUseSelection = document.getElementById('btn-use-selection');
@@ -45,6 +58,7 @@ const btnStripe = document.getElementById('btn-stripe');
 const btnSquare = document.getElementById('btn-square');
 const btnDiscard = document.getElementById('btn-discard');
 const btnExport = document.getElementById('btn-export');
+const btnSeedTest = document.getElementById('btn-seed-test');
 const fileInput = document.getElementById('file-input');
 
 // --- Camera ---
@@ -224,6 +238,9 @@ function showMatchCard(record, matchType = 'text', score = null) {
   } else {
     photo.classList.add('hidden');
   }
+
+  venmoQr.classList.add('hidden');
+  venmoQr.removeAttribute('src');
 
   matchCard.classList.add('visible');
   matchCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -564,6 +581,18 @@ function launchSquarePOS(record) {
   window.location.href = buildSquarePOSUrl(record);
 }
 
+function buildVenmoLink(record) {
+  const { venmoUsername } = getSettings();
+  if (!venmoUsername) throw new Error('No Venmo username configured (Settings)');
+
+  const amount = parseFloat(record.price);
+  if (isNaN(amount) || amount <= 0) throw new Error('Invalid price');
+
+  const params = new URLSearchParams({ txn: 'pay', amount: amount.toFixed(2) });
+  if (record.name) params.set('note', record.name);
+  return `https://venmo.com/${encodeURIComponent(venmoUsername)}?${params.toString()}`;
+}
+
 // --- No-match card actions ---
 btnNewItem.addEventListener('click', () => {
   showNewItemForm(lastRawText);
@@ -604,6 +633,19 @@ btnSquareMatch.addEventListener('click', () => {
     launchSquarePOS(matchedRecord);
   } catch (err) {
     toast('Square POS error: ' + err.message, 'error');
+  }
+});
+
+btnVenmoMatch.addEventListener('click', async () => {
+  if (!matchedRecord) return;
+  try {
+    const link = buildVenmoLink(matchedRecord);
+    const dataUrl = await QRCode.toDataURL(link);
+    venmoQr.src = dataUrl;
+    venmoQr.classList.remove('hidden');
+    venmoQr.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  } catch (err) {
+    toast('Venmo error: ' + err.message, 'error');
   }
 });
 
@@ -779,6 +821,133 @@ recordsList.addEventListener('click', async e => {
   }
 });
 
+// --- Cart (multi-item sale, no inventory change until Complete Sale) ---
+function cartAvailableFor(id) {
+  const record = getRecords().find(r => r.id === id);
+  if (!record || record.quantity === undefined || record.quantity === '') return null;
+  return parseInt(record.quantity, 10);
+}
+
+function addToCart(record) {
+  if (!record.price) { toast('Item has no price', 'error'); return; }
+  const existing = cart.find(i => i.id === record.id);
+  const available = cartAvailableFor(record.id);
+  const currentInCart = existing ? existing.quantity : 0;
+  if (available !== null && currentInCart + 1 > available) {
+    toast('No more in stock', 'error');
+    return;
+  }
+  if (existing) {
+    existing.quantity += 1;
+  } else {
+    cart.push({ id: record.id, name: record.name, price: record.price, quantity: 1 });
+  }
+  renderCart();
+  toast('Added to cart', 'success');
+}
+
+function cartToRecord() {
+  const total = cart.reduce((sum, item) => sum + parseFloat(item.price) * item.quantity, 0);
+  const note = cart.map(item => `${item.quantity}x ${item.name}`).join(', ');
+  return { price: total.toFixed(2), name: note };
+}
+
+function renderCart() {
+  cartVenmoQr.classList.add('hidden');
+  cartVenmoQr.removeAttribute('src');
+
+  if (!cart.length) {
+    cartSection.style.display = 'none';
+    return;
+  }
+  cartSection.style.display = '';
+  cartList.innerHTML = cart.map(item => `
+    <div class="record-item" data-id="${item.id}">
+      <div class="record-info">
+        <div class="record-name">${esc(item.name || '(no name)')}</div>
+        <div class="record-meta">$${esc(item.price)} each</div>
+      </div>
+      <div class="record-price">$${(parseFloat(item.price) * item.quantity).toFixed(2)}</div>
+      <div class="record-actions">
+        <button class="record-btn cart-qty-minus" data-id="${item.id}">−</button>
+        <span style="min-width:1.4rem;text-align:center;display:inline-block;">${item.quantity}</span>
+        <button class="record-btn cart-qty-plus" data-id="${item.id}">+</button>
+        <button class="record-btn delete cart-remove" data-id="${item.id}" title="Remove">✕</button>
+      </div>
+    </div>
+  `).join('');
+
+  const totalItems = cart.reduce((n, i) => n + i.quantity, 0);
+  const totalPrice = cart.reduce((sum, item) => sum + parseFloat(item.price) * item.quantity, 0);
+  cartTotalDisplay.textContent = `${totalItems} item${totalItems === 1 ? '' : 's'} · $${totalPrice.toFixed(2)}`;
+}
+
+cartList.addEventListener('click', e => {
+  const btn = e.target.closest('.record-btn');
+  if (!btn) return;
+  const id = Number(btn.dataset.id);
+  const item = cart.find(i => i.id === id);
+  if (!item) return;
+
+  if (btn.classList.contains('cart-qty-plus')) {
+    const available = cartAvailableFor(id);
+    if (available !== null && item.quantity + 1 > available) { toast('No more in stock', 'error'); return; }
+    item.quantity += 1;
+  } else if (btn.classList.contains('cart-qty-minus')) {
+    item.quantity -= 1;
+    if (item.quantity <= 0) cart = cart.filter(i => i.id !== id);
+  } else if (btn.classList.contains('cart-remove')) {
+    cart = cart.filter(i => i.id !== id);
+  }
+  renderCart();
+});
+
+btnAddToCart.addEventListener('click', () => {
+  if (!matchedRecord) return;
+  addToCart(matchedRecord);
+});
+
+btnCartVenmo.addEventListener('click', async () => {
+  if (!cart.length) return;
+  try {
+    const link = buildVenmoLink(cartToRecord());
+    const dataUrl = await QRCode.toDataURL(link);
+    cartVenmoQr.src = dataUrl;
+    cartVenmoQr.classList.remove('hidden');
+    cartVenmoQr.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  } catch (err) {
+    toast('Venmo error: ' + err.message, 'error');
+  }
+});
+
+btnCartSquare.addEventListener('click', () => {
+  if (!cart.length) return;
+  try {
+    launchSquarePOS(cartToRecord());
+  } catch (err) {
+    toast('Square POS error: ' + err.message, 'error');
+  }
+});
+
+btnCartComplete.addEventListener('click', () => {
+  if (!cart.length) return;
+  cart.forEach(item => {
+    const record = getRecords().find(r => r.id === item.id);
+    if (!record) return;
+    const currentQty = parseInt(record.quantity, 10) || 0;
+    updateRecord(item.id, { quantity: String(Math.max(0, currentQty - item.quantity)) });
+  });
+  cart = [];
+  renderCart();
+  renderRecords();
+  toast('Sale complete!', 'success');
+});
+
+btnCartClear.addEventListener('click', () => {
+  cart = [];
+  renderCart();
+});
+
 // --- Event listeners ---
 btnCamera.addEventListener('click', () => {
   if (cameraActive) stopCamera();
@@ -788,6 +957,23 @@ btnCamera.addEventListener('click', () => {
 btnCapture.addEventListener('click', captureFrame);
 btnUpload.addEventListener('click', () => fileInput.click());
 btnExport.addEventListener('click', () => { exportCSV(); toast('CSV downloaded', 'success'); });
+
+// --- Test data seeding (local dev only) ---
+const isLocalEnv = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+if (isLocalEnv) {
+  btnSeedTest.style.display = '';
+}
+
+btnSeedTest.addEventListener('click', () => {
+  const sampleRecords = [
+    { uniqueId: '', name: 'Kitty Button', price: '8.00', quantity: '5', location: 'Bin A' },
+    { uniqueId: '', name: 'Star Button', price: '6.50', quantity: '3', location: 'Bin A' },
+    { uniqueId: '', name: 'Floral Button', price: '10.00', quantity: '2', location: 'Bin B' }
+  ];
+  sampleRecords.forEach(saveRecord);
+  renderRecords();
+  toast('Seeded 3 test records', 'success');
+});
 
 // --- Helpers ---
 function showStatus(msg) {

@@ -1,8 +1,9 @@
-const CACHE = 'tag-scanner-v15';
+const CACHE = 'tag-scanner-v19';
 const ASSETS = [
   '/', '/index.html', '/settings/', '/css/style.css', '/js/app.js', '/js/storage.js',
   'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js',
-  'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0/+esm'
+  'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0/+esm',
+  'https://cdn.jsdelivr.net/npm/qrcode@1.5.4/+esm'
 ];
 
 self.addEventListener('install', e => {

@@ -56,6 +56,15 @@
       </div>
     </div>
 
+    <div class="settings-section">
+      <h2>Venmo</h2>
+      <p>Generates a QR code with the item's price pre-filled, for the customer to scan and pay with their own phone.</p>
+      <div class="settings-field">
+        <label for="venmo-username">Venmo Username</label>
+        <input type="text" id="venmo-username" placeholder="your-venmo-username">
+      </div>
+    </div>
+
     <button class="btn btn-primary" id="btn-save-settings">Save Settings</button>
     <div class="save-notice" id="save-notice">✓ Settings saved</div>
   </div>
@@ -68,12 +77,14 @@
     document.getElementById('gemini-key').value = localStorage.getItem('gemini_api_key') || '';
     document.getElementById('stripe-key').value = settings.stripeKey || '';
     document.getElementById('square-app-id').value = settings.squareAppId || '';
+    document.getElementById('venmo-username').value = settings.venmoUsername || '';
 
     document.getElementById('btn-save-settings').addEventListener('click', () => {
       saveSettings({
         anthropicKey: document.getElementById('anthropic-key').value.trim(),
         stripeKey: document.getElementById('stripe-key').value.trim(),
-        squareAppId: document.getElementById('square-app-id').value.trim()
+        squareAppId: document.getElementById('square-app-id').value.trim(),
+        venmoUsername: document.getElementById('venmo-username').value.trim()
       });
       localStorage.setItem('gemini_api_key', document.getElementById('gemini-key').value.trim());
       const notice = document.getElementById('save-notice');
