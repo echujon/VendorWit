@@ -55,10 +55,10 @@
           Upload
         </button>
       </div>
-      <label class="no-tag-toggle">
-        <input type="checkbox" id="skip-ocr-toggle">
-        No tag on this item — skip straight to appearance matching
-      </label>
+      <div class="scan-mode-toggle" role="group" aria-label="Scan mode">
+        <button type="button" class="scan-mode-btn active" id="btn-scan-mode-ocr" data-mode="ocr">OCR</button>
+        <button type="button" class="scan-mode-btn" id="btn-scan-mode-image" data-mode="image">Image</button>
+      </div>
     </div>
 
     <input type="file" id="file-input" accept="image/*" style="display:none">
@@ -96,11 +96,10 @@
       <div class="result-actions">
         <button class="btn btn-primary" id="btn-sell-one">Sell 1</button>
         <button class="btn btn-secondary" id="btn-add-to-cart">Add to Cart</button>
-        <button class="btn btn-secondary" id="btn-square-match">Send to Square POS</button>
-        <button class="btn btn-secondary" id="btn-venmo-match">Venmo QR</button>
+        <button class="btn btn-secondary" id="btn-square-match">Send to Square POS (this item)</button>
+        <button class="btn btn-secondary" id="btn-venmo-match">Venmo QR (this item)</button>
         <button class="btn btn-secondary" id="btn-edit-match">Edit</button>
         <button class="btn btn-secondary" id="btn-not-a-match">Not a match — New Item</button>
-        <button class="btn btn-secondary" id="btn-discard-match">Close</button>
       </div>
     </div>
 
@@ -151,22 +150,6 @@
       </div>
     </div>
 
-    <!-- Cart -->
-    <div id="cart-section" style="display:none">
-      <h2>
-        Cart
-        <span id="cart-total-display"></span>
-      </h2>
-      <div id="cart-list"></div>
-      <div class="result-actions" style="padding:1rem;">
-        <button class="btn btn-secondary" id="btn-cart-venmo">Venmo QR</button>
-        <button class="btn btn-secondary" id="btn-cart-square">Send to Square POS</button>
-        <button class="btn btn-primary" id="btn-cart-complete">Complete Sale</button>
-        <button class="btn btn-secondary" id="btn-cart-clear">Clear Cart</button>
-      </div>
-      <img id="cart-venmo-qr" class="match-photo hidden" alt="Venmo payment QR code" style="margin:0 1rem 1rem;width:calc(100% - 2rem);">
-    </div>
-
     <!-- Records -->
     <div id="records-section">
       <h2>
@@ -179,6 +162,41 @@
       <div id="records-list"></div>
     </div>
   </main>
+
+  <!-- Fixed bottom bar -->
+  <button id="review-sale-bar" class="review-sale-bar hidden">
+    Review Sale <span id="review-sale-summary"></span>
+  </button>
+
+  <!-- Review Sale modal -->
+  <div id="review-modal" class="modal hidden">
+    <div class="modal-content modal-content-tall">
+      <button class="modal-close" id="btn-review-modal-close" title="Close">✕</button>
+      <h2>Review Sale</h2>
+      <div id="review-cart-list"></div>
+      <div id="review-total-display"></div>
+      <div class="modal-actions" style="flex-wrap:wrap;">
+        <button class="btn btn-secondary" id="btn-review-venmo">Venmo QR</button>
+        <button class="btn btn-secondary" id="btn-review-square">Send to Square POS</button>
+        <button class="btn btn-primary" id="btn-review-complete">Complete Sale</button>
+        <button class="btn btn-secondary" id="btn-review-clear">Clear Cart</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Venmo checkout modal -->
+  <div id="venmo-modal" class="modal hidden">
+    <div class="modal-content">
+      <button class="modal-close" id="btn-venmo-modal-close" title="Cancel order">✕</button>
+      <h2>Scan to Pay</h2>
+      <div id="venmo-modal-total"></div>
+      <img id="venmo-modal-qr" alt="Venmo payment QR code">
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="btn-venmo-modal-edit">Edit</button>
+        <button class="btn btn-primary" id="btn-venmo-modal-success">Success</button>
+      </div>
+    </div>
+  </div>
 
   <div id="toast"></div>
 
