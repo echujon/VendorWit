@@ -2,16 +2,36 @@ const RECORDS_KEY = 'tag_scanner_records';
 const SETTINGS_KEY = 'tag_scanner_settings';
 
 export function getRecords() {
+  let records;
   try {
-    return JSON.parse(localStorage.getItem(RECORDS_KEY) || '[]');
+    records = JSON.parse(localStorage.getItem(RECORDS_KEY) || '[]');
   } catch {
     return [];
   }
+
+  // Repair any duplicate ids (e.g. from records saved in the same millisecond
+  // before this was guarded against in saveRecord).
+  const seenIds = new Set();
+  let repaired = false;
+  for (const record of records) {
+    while (seenIds.has(record.id)) {
+      record.id++;
+      repaired = true;
+    }
+    seenIds.add(record.id);
+  }
+  if (repaired) {
+    localStorage.setItem(RECORDS_KEY, JSON.stringify(records));
+  }
+
+  return records;
 }
 
 export function saveRecord(record) {
   const records = getRecords();
-  records.unshift({ ...record, id: Date.now(), createdAt: new Date().toISOString() });
+  let id = Date.now();
+  while (records.some(r => r.id === id)) id++;
+  records.unshift({ ...record, id, createdAt: new Date().toISOString() });
   localStorage.setItem(RECORDS_KEY, JSON.stringify(records));
   return records;
 }

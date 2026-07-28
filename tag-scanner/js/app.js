@@ -27,7 +27,17 @@ const ocrRaw = document.getElementById('ocr-raw');
 const ocrRawSelectable = document.getElementById('ocr-raw-selectable');
 const recordsList = document.getElementById('records-list');
 const scanOverlay = document.querySelector('.scan-overlay');
-const skipOcrToggle = document.getElementById('skip-ocr-toggle');
+const btnScanModeOcr = document.getElementById('btn-scan-mode-ocr');
+const btnScanModeImage = document.getElementById('btn-scan-mode-image');
+let scanMode = 'ocr';
+
+function setScanMode(mode) {
+  scanMode = mode;
+  btnScanModeOcr.classList.toggle('active', mode === 'ocr');
+  btnScanModeImage.classList.toggle('active', mode === 'image');
+}
+btnScanModeOcr.addEventListener('click', () => setScanMode('ocr'));
+btnScanModeImage.addEventListener('click', () => setScanMode('image'));
 const scanPlaceholder = document.querySelector('.scan-placeholder');
 
 // --- Buttons ---
@@ -42,16 +52,23 @@ const btnSquareMatch = document.getElementById('btn-square-match');
 const btnVenmoMatch = document.getElementById('btn-venmo-match');
 const venmoQr = document.getElementById('venmo-qr');
 const btnAddToCart = document.getElementById('btn-add-to-cart');
-const cartSection = document.getElementById('cart-section');
-const cartList = document.getElementById('cart-list');
-const cartTotalDisplay = document.getElementById('cart-total-display');
-const cartVenmoQr = document.getElementById('cart-venmo-qr');
-const btnCartVenmo = document.getElementById('btn-cart-venmo');
-const btnCartSquare = document.getElementById('btn-cart-square');
-const btnCartComplete = document.getElementById('btn-cart-complete');
-const btnCartClear = document.getElementById('btn-cart-clear');
+const reviewSaleBar = document.getElementById('review-sale-bar');
+const reviewSaleSummary = document.getElementById('review-sale-summary');
+const reviewModal = document.getElementById('review-modal');
+const btnReviewModalClose = document.getElementById('btn-review-modal-close');
+const reviewCartList = document.getElementById('review-cart-list');
+const reviewTotalDisplay = document.getElementById('review-total-display');
+const btnReviewVenmo = document.getElementById('btn-review-venmo');
+const btnReviewSquare = document.getElementById('btn-review-square');
+const btnReviewComplete = document.getElementById('btn-review-complete');
+const btnReviewClear = document.getElementById('btn-review-clear');
+const venmoModal = document.getElementById('venmo-modal');
+const venmoModalTotal = document.getElementById('venmo-modal-total');
+const venmoModalQr = document.getElementById('venmo-modal-qr');
+const btnVenmoModalClose = document.getElementById('btn-venmo-modal-close');
+const btnVenmoModalEdit = document.getElementById('btn-venmo-modal-edit');
+const btnVenmoModalSuccess = document.getElementById('btn-venmo-modal-success');
 const btnNotAMatch = document.getElementById('btn-not-a-match');
-const btnDiscardMatch = document.getElementById('btn-discard-match');
 const btnUseSelection = document.getElementById('btn-use-selection');
 const btnSave = document.getElementById('btn-save');
 const btnStripe = document.getElementById('btn-stripe');
@@ -162,7 +179,7 @@ let lastRawText = '';
 async function processImage(blob) {
   hideAllResultCards();
 
-  const skipOcr = skipOcrToggle.checked;
+  const skipOcr = scanMode === 'image';
   let rawText = '';
   if (!skipOcr) {
     showStatus('Running OCR...');
@@ -654,8 +671,6 @@ btnNotAMatch.addEventListener('click', () => {
   showNewItemForm(lastRawText);
 });
 
-btnDiscardMatch.addEventListener('click', resetScanArea);
-
 // --- Unique identifier selection ---
 btnUseSelection.addEventListener('click', () => {
   const selection = window.getSelection().toString().trim();
@@ -853,15 +868,21 @@ function cartToRecord() {
 }
 
 function renderCart() {
-  cartVenmoQr.classList.add('hidden');
-  cartVenmoQr.removeAttribute('src');
+  const totalItemCount = cart.reduce((n, i) => n + i.quantity, 0);
 
   if (!cart.length) {
-    cartSection.style.display = 'none';
+    reviewSaleBar.classList.add('hidden');
+    reviewCartList.innerHTML = '';
+    reviewTotalDisplay.textContent = '';
     return;
   }
-  cartSection.style.display = '';
-  cartList.innerHTML = cart.map(item => `
+
+  const totalPrice = cart.reduce((sum, item) => sum + parseFloat(item.price) * item.quantity, 0);
+
+  reviewSaleBar.classList.remove('hidden');
+  reviewSaleSummary.textContent = `${totalItemCount} item${totalItemCount === 1 ? '' : 's'} · $${totalPrice.toFixed(2)}`;
+
+  reviewCartList.innerHTML = cart.map(item => `
     <div class="record-item" data-id="${item.id}">
       <div class="record-info">
         <div class="record-name">${esc(item.name || '(no name)')}</div>
@@ -877,12 +898,10 @@ function renderCart() {
     </div>
   `).join('');
 
-  const totalItems = cart.reduce((n, i) => n + i.quantity, 0);
-  const totalPrice = cart.reduce((sum, item) => sum + parseFloat(item.price) * item.quantity, 0);
-  cartTotalDisplay.textContent = `${totalItems} item${totalItems === 1 ? '' : 's'} · $${totalPrice.toFixed(2)}`;
+  reviewTotalDisplay.textContent = `Total: $${totalPrice.toFixed(2)}`;
 }
 
-cartList.addEventListener('click', e => {
+reviewCartList.addEventListener('click', e => {
   const btn = e.target.closest('.record-btn');
   if (!btn) return;
   const id = Number(btn.dataset.id);
@@ -907,30 +926,7 @@ btnAddToCart.addEventListener('click', () => {
   addToCart(matchedRecord);
 });
 
-btnCartVenmo.addEventListener('click', async () => {
-  if (!cart.length) return;
-  try {
-    const link = buildVenmoLink(cartToRecord());
-    const dataUrl = await QRCode.toDataURL(link);
-    cartVenmoQr.src = dataUrl;
-    cartVenmoQr.classList.remove('hidden');
-    cartVenmoQr.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  } catch (err) {
-    toast('Venmo error: ' + err.message, 'error');
-  }
-});
-
-btnCartSquare.addEventListener('click', () => {
-  if (!cart.length) return;
-  try {
-    launchSquarePOS(cartToRecord());
-  } catch (err) {
-    toast('Square POS error: ' + err.message, 'error');
-  }
-});
-
-btnCartComplete.addEventListener('click', () => {
-  if (!cart.length) return;
+function completeSale() {
   cart.forEach(item => {
     const record = getRecords().find(r => r.id === item.id);
     if (!record) return;
@@ -941,11 +937,71 @@ btnCartComplete.addEventListener('click', () => {
   renderCart();
   renderRecords();
   toast('Sale complete!', 'success');
+}
+
+function closeReviewModal() { reviewModal.classList.add('hidden'); }
+function openReviewModal() { reviewModal.classList.remove('hidden'); }
+
+function closeVenmoModal() {
+  venmoModal.classList.add('hidden');
+  venmoModalQr.removeAttribute('src');
+}
+
+reviewSaleBar.addEventListener('click', openReviewModal);
+btnReviewModalClose.addEventListener('click', closeReviewModal);
+
+btnReviewVenmo.addEventListener('click', async () => {
+  if (!cart.length) return;
+  try {
+    const link = buildVenmoLink(cartToRecord());
+    const dataUrl = await QRCode.toDataURL(link);
+    closeReviewModal();
+    venmoModalTotal.textContent = reviewSaleSummary.textContent;
+    venmoModalQr.src = dataUrl;
+    venmoModal.classList.remove('hidden');
+  } catch (err) {
+    toast('Venmo error: ' + err.message, 'error');
+  }
 });
 
-btnCartClear.addEventListener('click', () => {
+btnReviewSquare.addEventListener('click', () => {
+  if (!cart.length) return;
+  try {
+    closeReviewModal();
+    launchSquarePOS(cartToRecord());
+  } catch (err) {
+    toast('Square POS error: ' + err.message, 'error');
+  }
+});
+
+btnReviewComplete.addEventListener('click', () => {
+  if (!cart.length) return;
+  closeReviewModal();
+  completeSale();
+});
+
+btnReviewClear.addEventListener('click', () => {
   cart = [];
   renderCart();
+  closeReviewModal();
+});
+
+btnVenmoModalClose.addEventListener('click', () => {
+  closeVenmoModal();
+  cart = [];
+  renderCart();
+  toast('Order canceled', 'error');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+});
+
+btnVenmoModalEdit.addEventListener('click', () => {
+  closeVenmoModal();
+  openReviewModal();
+});
+
+btnVenmoModalSuccess.addEventListener('click', () => {
+  closeVenmoModal();
+  completeSale();
 });
 
 // --- Event listeners ---
