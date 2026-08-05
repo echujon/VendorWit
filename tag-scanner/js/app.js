@@ -161,16 +161,50 @@ previewContainer.addEventListener('drop', e => {
   }
 });
 
-function loadFile(file) {
-  capturedBlob = file;
-  const url = URL.createObjectURL(file);
+const OCR_MAX_DIM = 1600;
+
+// Uploaded/dropped photos come straight from a phone gallery at full camera
+// resolution (often 10+MB), which makes base64 encoding, upload, and OCR
+// itself much slower than it needs to be — downscale to what OCR actually
+// needs, same as the live camera capture already does implicitly via its
+// capture resolution constraint.
+function downscaleForOcr(blob, maxDim = OCR_MAX_DIM, quality = 0.85) {
+  return new Promise(resolve => {
+    const img = new Image();
+    const url = URL.createObjectURL(blob);
+    img.onload = () => {
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      if (scale === 1) {
+        URL.revokeObjectURL(url);
+        resolve(blob);
+        return;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      canvas.toBlob(resized => resolve(resized || blob), 'image/jpeg', quality);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(blob);
+    };
+    img.src = url;
+  });
+}
+
+async function loadFile(file) {
+  const blob = await downscaleForOcr(file);
+  capturedBlob = blob;
+  const url = URL.createObjectURL(blob);
   previewImg.src = url;
   previewImg.classList.remove('hidden');
   video.classList.add('hidden');
   scanOverlay.style.display = 'none';
   scanPlaceholder.style.display = 'none';
   if (cameraActive) stopCamera();
-  processImage(file);
+  processImage(blob);
 }
 
 // --- OCR + AI ---
@@ -297,14 +331,7 @@ async function runGeminiOCR(blob) {
       return null;
     }
 
-    // Convert blob to base64
-    const arrayBuffer = await blob.arrayBuffer();
-    const uint8Array = new Uint8Array(arrayBuffer);
-    let binaryString = '';
-    for (let i = 0; i < uint8Array.length; i++) {
-      binaryString += String.fromCharCode(uint8Array[i]);
-    }
-    const base64 = btoa(binaryString);
+    const base64 = await blobToBase64(blob);
 
     // Call Gemini API directly
     const response = await fetch(
@@ -382,14 +409,15 @@ async function runTesseractOCR(blob) {
 const GEMINI_EMBED_DIMENSIONS = 768;
 let clipPipelinePromise = null;
 
-async function blobToBase64(blob) {
-  const arrayBuffer = await blob.arrayBuffer();
-  const uint8Array = new Uint8Array(arrayBuffer);
-  let binaryString = '';
-  for (let i = 0; i < uint8Array.length; i++) {
-    binaryString += String.fromCharCode(uint8Array[i]);
-  }
-  return btoa(binaryString);
+// FileReader's native base64 encoding is far faster than a manual
+// char-by-char loop, which noticeably lags on multi-megabyte photos.
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.slice(reader.result.indexOf(',') + 1));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
 }
 
 async function embedImageGemini(blob) {
@@ -569,7 +597,7 @@ function buildSquarePOSUrl(record) {
 
   if (platform === 'ios') {
     const payload = {
-      amount_money: { amount, currency_code: 'USD' },
+      amount_money: { amount: String(amount), currency_code: 'USD' },
       callback_url: callbackUrl,
       client_id: squareAppId,
       version: '1.3',
