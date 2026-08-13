@@ -428,6 +428,15 @@ main { flex: 1; padding: 1.25rem; padding-bottom: 5rem; display: flex; flex-dire
 
 #review-total-display { font-size: 1.25rem; font-weight: 700; color: var(--brand-dark); }
 
+#terminal-status {
+  font-size: 0.9rem;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+#terminal-status.hidden { display: none; }
+
 /* Fixed bottom "Review Sale" bar */
 .review-sale-bar {
   position: fixed;

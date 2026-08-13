@@ -58,6 +58,8 @@ const reviewModal = document.getElementById('review-modal');
 const btnReviewModalClose = document.getElementById('btn-review-modal-close');
 const reviewCartList = document.getElementById('review-cart-list');
 const reviewTotalDisplay = document.getElementById('review-total-display');
+const btnReviewTerminal = document.getElementById('btn-review-terminal');
+const terminalStatus = document.getElementById('terminal-status');
 const btnReviewVenmo = document.getElementById('btn-review-venmo');
 const btnReviewSquare = document.getElementById('btn-review-square');
 const btnReviewComplete = document.getElementById('btn-review-complete');
@@ -967,7 +969,31 @@ function completeSale() {
   toast('Sale complete!', 'success');
 }
 
-function closeReviewModal() { reviewModal.classList.add('hidden'); }
+let terminalPollTimer = null;
+
+function stopTerminalPolling() {
+  if (terminalPollTimer) {
+    clearTimeout(terminalPollTimer);
+    terminalPollTimer = null;
+  }
+}
+
+function setTerminalStatus(msg) {
+  terminalStatus.textContent = msg;
+  terminalStatus.classList.remove('hidden');
+}
+
+function clearTerminalStatus() {
+  terminalStatus.classList.add('hidden');
+  terminalStatus.textContent = '';
+}
+
+function closeReviewModal() {
+  reviewModal.classList.add('hidden');
+  stopTerminalPolling();
+  clearTerminalStatus();
+  btnReviewTerminal.disabled = false;
+}
 function openReviewModal() { reviewModal.classList.remove('hidden'); }
 
 function closeVenmoModal() {
@@ -977,6 +1003,64 @@ function closeVenmoModal() {
 
 reviewSaleBar.addEventListener('click', openReviewModal);
 btnReviewModalClose.addEventListener('click', closeReviewModal);
+
+// Polls every 2s for up to 45 attempts (~90s ceiling) until the checkout is
+// COMPLETED (finish the sale), CANCELED (report it), or we give up gracefully.
+async function pollTerminalCheckout(checkoutId, attemptsLeft) {
+  if (attemptsLeft <= 0) {
+    setTerminalStatus('Still waiting — check the Terminal or try again.');
+    btnReviewTerminal.disabled = false;
+    return;
+  }
+  try {
+    const res = await fetch(`/api/terminal-checkout/${checkoutId}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Status check failed');
+
+    if (data.status === 'COMPLETED') {
+      clearTerminalStatus();
+      btnReviewTerminal.disabled = false;
+      closeReviewModal();
+      completeSale();
+      return;
+    }
+    if (data.status === 'CANCELED') {
+      clearTerminalStatus();
+      btnReviewTerminal.disabled = false;
+      toast('Terminal checkout canceled', 'error');
+      return;
+    }
+
+    setTerminalStatus(`Waiting for card... (${data.status})`);
+    terminalPollTimer = setTimeout(() => pollTerminalCheckout(checkoutId, attemptsLeft - 1), 2000);
+  } catch (err) {
+    clearTerminalStatus();
+    btnReviewTerminal.disabled = false;
+    toast('Terminal status error: ' + err.message, 'error');
+  }
+}
+
+btnReviewTerminal.addEventListener('click', async () => {
+  if (!cart.length) return;
+  const record = cartToRecord();
+  btnReviewTerminal.disabled = true;
+  setTerminalStatus('Sending to Terminal...');
+  try {
+    const res = await fetch('/api/terminal-checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount: record.price, note: record.name })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Terminal checkout failed');
+    setTerminalStatus(`Waiting for card... (${data.status})`);
+    pollTerminalCheckout(data.checkoutId, 45);
+  } catch (err) {
+    clearTerminalStatus();
+    btnReviewTerminal.disabled = false;
+    toast('Terminal error: ' + err.message, 'error');
+  }
+});
 
 btnReviewVenmo.addEventListener('click', async () => {
   if (!cart.length) return;
