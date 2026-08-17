@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#2563eb">
+  <meta name="description" content="VendorWit turns a phone photo of a tag into tracked inventory and a point-of-sale checkout — no barcodes, no spreadsheets.">
+  <title>VendorWit — Scan a Tag. Track It. Sell It.</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <a class="logo" href="/">VendorWit</a>
+    </header>
+
+    <section class="hero">
+      <h1>Scan a tag. <span class="accent">Track it. Sell it.</span></h1>
+      <p class="sub">
+        VendorWit uses your phone's camera to read handwritten or printed tags,
+        turning them straight into inventory records and point-of-sale checkouts —
+        no barcodes, no spreadsheets, no manual entry.
+      </p>
+
+      <form id="waitlist">
+        <div class="form-row">
+          <input type="email" id="email" name="email" placeholder="you@email.com" required autocomplete="email">
+          <select id="role" name="role">
+            <option value="">What best describes you? (optional)</option>
+            <option value="retail-shop">Small retail / shop owner</option>
+            <option value="market-vendor">Market or pop-up vendor</option>
+            <option value="maker">Maker / artist selling my own goods</option>
+            <option value="other">Other</option>
+          </select>
+          <button type="submit" class="btn-primary" id="submit-btn">Get early access</button>
+        </div>
+        <div id="form-status"></div>
+        <p class="form-note">No spam. Just a note when VendorWit is ready to try.</p>
+      </form>
+    </section>
+
+    <section class="section">
+      <h2>How it works</h2>
+      <div class="steps">
+        <div class="step">
+          <div class="num">1</div>
+          <h3>Snap a photo</h3>
+          <p>Point your phone at any tag or label — printed or handwritten.</p>
+        </div>
+        <div class="step">
+          <div class="num">2</div>
+          <h3>Auto-matched</h3>
+          <p>VendorWit reads the tag and matches it to existing inventory, or creates a new item.</p>
+        </div>
+        <div class="step">
+          <div class="num">3</div>
+          <h3>Sell on the spot</h3>
+          <p>Ring it up right there — inventory and sales stay in sync automatically.</p>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      &copy; 2026 VendorWit
+    </footer>
+  </div>
+
+  <script>
+    const form = document.getElementById('waitlist');
+    const statusEl = document.getElementById('form-status');
+    const submitBtn = document.getElementById('submit-btn');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('email').value.trim();
+      const role = document.getElementById('role').value;
+
+      submitBtn.disabled = true;
+      statusEl.textContent = '';
+      statusEl.className = '';
+
+      try {
+        const res = await fetch('/api/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, role }),
+        });
+
+        if (!res.ok) throw new Error('Request failed');
+
+        statusEl.textContent = "You're on the list! We'll be in touch.";
+        statusEl.className = 'success';
+        form.reset();
+      } catch (err) {
+        statusEl.textContent = 'Something went wrong — please try again.';
+        statusEl.className = 'error';
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

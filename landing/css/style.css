@@ -1,0 +1,187 @@
+:root {
+  --brand: #2563eb;
+  --brand-dark: #1d4ed8;
+  --bg: #f5f7fa;
+  --surface: #ffffff;
+  --text: #0a0e17;
+  --muted: #5b6472;
+  --border: #dbe1ea;
+  --success: #4caf50;
+  --danger: #e53935;
+  --radius: 12px;
+  --shadow: 0 2px 12px rgba(0,0,0,0.08);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.wrap {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0 1.25rem;
+}
+
+header {
+  padding: 1.5rem 0;
+}
+
+.logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  font-size: 1.15rem;
+  color: var(--brand-dark);
+  text-decoration: none;
+}
+
+.hero {
+  padding: 3rem 0 2.5rem;
+  text-align: center;
+}
+
+.hero h1 {
+  font-size: clamp(1.9rem, 5vw, 2.75rem);
+  margin: 0 0 0.75rem;
+  line-height: 1.15;
+}
+
+.hero .accent {
+  color: var(--brand-dark);
+}
+
+.hero p.sub {
+  color: var(--muted);
+  font-size: 1.1rem;
+  max-width: 540px;
+  margin: 0 auto 2rem;
+}
+
+/* Waitlist form */
+#waitlist {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.5rem;
+  max-width: 440px;
+  margin: 0 auto;
+}
+
+.form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+input[type="email"], select {
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 1rem;
+  background: #fff;
+  color: var(--text);
+}
+
+input[type="email"]:focus, select:focus {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+
+.btn-primary {
+  background: var(--brand);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 0.8rem 1rem;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btn-primary:hover { background: var(--brand-dark); }
+.btn-primary:disabled { opacity: 0.6; cursor: default; }
+
+.form-note {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-top: 0.6rem;
+  text-align: center;
+}
+
+#form-status {
+  margin-top: 0.75rem;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+#form-status.success { color: var(--success); }
+#form-status.error { color: var(--danger); }
+
+/* How it works */
+.section {
+  padding: 2.5rem 0;
+}
+
+.section h2 {
+  text-align: center;
+  font-size: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.25rem;
+}
+
+@media (max-width: 640px) {
+  .steps { grid-template-columns: 1fr; }
+}
+
+.step {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  text-align: center;
+}
+
+.step .num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--brand);
+  color: #fff;
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+}
+
+.step h3 {
+  margin: 0 0 0.4rem;
+  font-size: 1.05rem;
+}
+
+.step p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+footer {
+  text-align: center;
+  padding: 2rem 0 3rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
