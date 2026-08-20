@@ -53,9 +53,15 @@ export function deleteRecord(id) {
 }
 
 export function findByUniqueId(ocrText) {
-  const text = (ocrText || '').toLowerCase();
+  const text = (ocrText || '').toString().trim();
   if (!text) return null;
-  return getRecords().find(r => r.uniqueId && text.includes(r.uniqueId.toLowerCase())) || null;
+
+  const normalized = text.toLowerCase();
+  return getRecords().find(r => {
+    const unique = (r.uniqueId || '').toString().trim();
+    if (!unique) return false;
+    return normalized.includes(unique.toLowerCase()) || normalized === unique.toLowerCase();
+  }) || null;
 }
 
 export const VISUAL_MATCH_THRESHOLD = 0.85;

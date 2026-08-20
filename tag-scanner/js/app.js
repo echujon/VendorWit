@@ -229,7 +229,13 @@ async function processImage(blob) {
 
   lastRawText = rawText;
 
-  const textMatch = rawText.trim() ? findByUniqueId(rawText) : null;
+  const parsedScan = parseScannedText(rawText);
+  const textMatch = parsedScan.uniqueId
+    ? findByUniqueId(parsedScan.uniqueId)
+    : rawText.trim()
+      ? findByUniqueId(rawText)
+      : null;
+
   if (textMatch) {
     hideStatus();
     showMatchCard(textMatch, 'text');
@@ -299,18 +305,88 @@ function showMatchCard(record, matchType = 'text', score = null) {
   matchCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
+function parseScannedText(rawText = '') {
+  const lines = (rawText || '').replace(/\r\n?/g, '\n').split('\n');
+  let price = '';
+  let uniqueId = '';
+  const descriptionParts = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    const priceMatch = trimmed.match(/\$\s*\d+(?:\.\d{1,2})?/);
+    if (priceMatch && !price) {
+      price = priceMatch[0].replace(/\$/g, '').trim();
+    }
+
+    const idMatch = trimmed.match(/(?:id|sku|item)[\s:-]*([A-Za-z0-9]{3,})/i) || trimmed.match(/\b(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9]{4,}\b/);
+    if (idMatch && !uniqueId) {
+      uniqueId = (idMatch[1] || idMatch[0]).replace(/[^A-Za-z0-9]/g, '').trim();
+    }
+
+    let descriptionLine = trimmed;
+    if (priceMatch) {
+      descriptionLine = descriptionLine.replace(priceMatch[0], '').trim();
+    }
+    const matchedId = idMatch ? (idMatch[1] || idMatch[0]) : null;
+    if (matchedId) {
+      descriptionLine = descriptionLine.replace(new RegExp(`(?:id|sku|item)[\\s:-]*${matchedId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i'), '').trim();
+      descriptionLine = descriptionLine.replace(new RegExp(`\\b${matchedId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i'), '').trim();
+    }
+
+    descriptionLine = descriptionLine
+      .replace(/\b(?:id|sku|item)\b\s*[:\-]?/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (descriptionLine && !/^\$?\d+(?:\.\d{1,2})?$/.test(descriptionLine)) {
+      descriptionParts.push(descriptionLine);
+    }
+  }
+
+  const name = descriptionParts.join(' ').trim();
+  return {
+    uniqueId,
+    name,
+    price,
+    quantity: '',
+    location: ''
+  };
+}
+
+function askIfRecordIsCorrect(data = {}) {
+  const summary = [
+    data.uniqueId ? `ID: ${data.uniqueId}` : null,
+    data.name ? `Name: ${data.name}` : null,
+    data.price ? `Price: $${data.price}` : null
+  ].filter(Boolean).join('\n');
+
+  if (!summary) return true;
+  return window.confirm(`Does this record look correct?\n\n${summary}`);
+}
+
 function showNewItemForm(rawText, prefill = {}) {
+  const parsed = Object.keys(prefill).length ? prefill : parseScannedText(rawText);
+
   resultCardTitle.textContent = prefill.id ? 'Edit Item' : 'New Item';
   ocrRawSelectable.textContent = rawText || '';
-  fieldUniqueId.value = prefill.uniqueId || '';
-  fieldName.value = prefill.name || '';
-  fieldPrice.value = prefill.price || '';
-  fieldQuantity.value = prefill.quantity || '';
-  fieldLocation.value = prefill.location || '';
+  fieldUniqueId.value = parsed.uniqueId || prefill.uniqueId || '';
+  fieldName.value = parsed.name || prefill.name || '';
+  fieldPrice.value = parsed.price || prefill.price || '';
+  fieldQuantity.value = parsed.quantity || prefill.quantity || '';
+  fieldLocation.value = parsed.location || prefill.location || '';
   resultCard.dataset.editId = prefill.id || '';
   hideAllResultCards();
   resultCard.classList.add('visible');
   resultCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+  if (!prefill.id && rawText && (parsed.uniqueId || parsed.name || parsed.price)) {
+    const isCorrect = askIfRecordIsCorrect(parsed);
+    if (!isCorrect) {
+      toast('Review the scanned data and update the fields as needed.', 'info');
+    }
+  }
 }
 
 async function runOCR(blob) {
@@ -741,7 +817,16 @@ async function attachVisualData(data) {
 btnSave.addEventListener('click', async () => {
   const data = await attachVisualData(collectFormData());
   if (!data.name && !data.price) { toast('Add a name or price first', 'error'); return; }
+
   const editId = resultCard.dataset.editId ? Number(resultCard.dataset.editId) : null;
+  if (!editId) {
+    const isCorrect = askIfRecordIsCorrect(data);
+    if (!isCorrect) {
+      toast('Update the record before saving.', 'info');
+      return;
+    }
+  }
+
   if (editId) {
     updateRecord(editId, data);
   } else {
