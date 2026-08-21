@@ -1,12 +1,13 @@
 // Cloudflare Pages Function: POST /api/terminal-checkout
-// Creates a Square Terminal checkout on the paired device. The Square access
+// Creates a Square Terminal checkout on a paired device. The Square access
 // token never reaches the client — it's read here from Pages environment
 // variables (Cloudflare dashboard > Pages project > Settings > Environment
-// variables), configured as a secret.
+// variables), configured as a secret. The device id is not secret and is
+// supplied per-request by the client (see js/app.js / settings), so a single
+// deployment isn't locked to one fixed Terminal.
 //
 // Required environment variables:
 //   SQUARE_ACCESS_TOKEN  - sandbox or production access token
-//   SQUARE_DEVICE_ID     - id of the paired Terminal/Register device
 //   SQUARE_ENVIRONMENT   - "production" or "sandbox" (defaults to sandbox)
 
 export async function onRequestPost(context) {
@@ -24,8 +25,13 @@ export async function onRequestPost(context) {
     return json({ error: 'amount must be a positive number' }, 400);
   }
 
-  if (!env.SQUARE_ACCESS_TOKEN || !env.SQUARE_DEVICE_ID) {
-    return json({ error: 'Server not configured: missing SQUARE_ACCESS_TOKEN or SQUARE_DEVICE_ID' }, 500);
+  const deviceId = (body.deviceId || '').trim();
+  if (!deviceId) {
+    return json({ error: 'deviceId is required (set it in Settings)' }, 400);
+  }
+
+  if (!env.SQUARE_ACCESS_TOKEN) {
+    return json({ error: 'Server not configured: missing SQUARE_ACCESS_TOKEN' }, 500);
   }
 
   const baseUrl = env.SQUARE_ENVIRONMENT === 'production'
@@ -43,7 +49,7 @@ export async function onRequestPost(context) {
       idempotency_key: crypto.randomUUID(),
       checkout: {
         amount_money: { amount: Math.round(amount * 100), currency: 'USD' },
-        device_options: { device_id: env.SQUARE_DEVICE_ID },
+        device_options: { device_id: deviceId },
         note: body.note || ''
       }
     })
