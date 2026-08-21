@@ -721,6 +721,11 @@ btnNewItem.addEventListener('click', () => {
   showNewItemForm(lastRawText);
 });
 
+const btnManualEntry = document.getElementById('btn-manual-entry');
+btnManualEntry.addEventListener('click', () => {
+  showNewItemForm('');
+});
+
 btnDiscardScan.addEventListener('click', resetScanArea);
 
 // --- Match card actions ---
