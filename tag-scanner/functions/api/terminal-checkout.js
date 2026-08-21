@@ -10,6 +10,7 @@
 //   SQUARE_ACCESS_TOKEN  - sandbox or production access token
 //   SQUARE_ENVIRONMENT   - "production" or "sandbox" (defaults to sandbox)
 
+//some other comment<redeploy>
 export async function onRequestPost(context) {
   const { request, env } = context;
 
