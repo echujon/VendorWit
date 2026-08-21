@@ -10,7 +10,24 @@
 //   SQUARE_ACCESS_TOKEN  - sandbox or production access token
 //   SQUARE_ENVIRONMENT   - "production" or "sandbox" (defaults to sandbox)
 
-//some other comment<redeploy>
+// TEMPORARY DEBUG — remove after confirming the deployed env vars are correct.
+// GET /api/terminal-checkout?debug=1 returns a masked fingerprint of the
+// server's current env, never the full secret.
+export async function onRequestGet(context) {
+  const { request, env } = context;
+  const url = new URL(request.url);
+  if (url.searchParams.get('debug') !== '1') {
+    return json({ error: 'Not found' }, 404);
+  }
+  const token = env.SQUARE_ACCESS_TOKEN || '';
+  return json({
+    hasToken: !!token,
+    tokenLength: token.length,
+    tokenLast4: token.slice(-4),
+    environment: env.SQUARE_ENVIRONMENT || '(unset, defaults to sandbox)'
+  });
+}
+
 export async function onRequestPost(context) {
   const { request, env } = context;
 
