@@ -10,24 +10,6 @@
 //   SQUARE_ACCESS_TOKEN  - sandbox or production access token
 //   SQUARE_ENVIRONMENT   - "production" or "sandbox" (defaults to sandbox)
 
-// TEMPORARY DEBUG — remove after confirming the deployed env vars are correct.
-// GET /api/terminal-checkout?debug=1 returns a masked fingerprint of the
-// server's current env, never the full secret.
-export async function onRequestGet(context) {
-  const { request, env } = context;
-  const url = new URL(request.url);
-  if (url.searchParams.get('debug') !== '1') {
-    return json({ error: 'Not found' }, 404);
-  }
-  const token = env.SQUARE_ACCESS_TOKEN || '';
-  return json({
-    hasToken: !!token,
-    tokenLength: token.length,
-    tokenLast4: token.slice(-4),
-    environment: env.SQUARE_ENVIRONMENT || '(unset, defaults to sandbox)'
-  });
-}
-
 export async function onRequestPost(context) {
   const { request, env } = context;
 
@@ -43,7 +25,9 @@ export async function onRequestPost(context) {
     return json({ error: 'amount must be a positive number' }, 400);
   }
 
-  const deviceId = (body.deviceId || '').trim();
+  // The Terminal Checkout API wants the plain device id, not the "device:"-
+  // prefixed form the newer unified Devices API (GET /v2/devices) returns.
+  const deviceId = (body.deviceId || '').trim().replace(/^device:/, '');
   if (!deviceId) {
     return json({ error: 'deviceId is required (set it in Settings)' }, 400);
   }
