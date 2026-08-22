@@ -320,7 +320,13 @@ function parseScannedText(rawText = '') {
       price = priceMatch[0].replace(/\$/g, '').trim();
     }
 
-    const idMatch = trimmed.match(/(?:id|sku|item)[\s:-]*([A-Za-z0-9]{3,})/i) || trimmed.match(/\b(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9]{4,}\b/);
+    // A '#'-prefixed token is an explicit, unambiguous unique-id marker —
+    // check it first so it wins over the generic heuristics below. Requires
+    // a letter+digit mix (e.g. #483A) so a stray '#5' (e.g. "item #5 of 10")
+    // isn't mistaken for a real id.
+    const idMatch = trimmed.match(/#(?=[A-Za-z0-9]*[A-Za-z])(?=[A-Za-z0-9]*\d)([A-Za-z0-9]+)/i)
+      || trimmed.match(/(?:id|sku|item)[\s:-]*([A-Za-z0-9]{3,})/i)
+      || trimmed.match(/\b(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9]{4,}\b/);
     if (idMatch && !uniqueId) {
       uniqueId = (idMatch[1] || idMatch[0]).replace(/[^A-Za-z0-9]/g, '').trim();
     }
@@ -332,7 +338,7 @@ function parseScannedText(rawText = '') {
     const matchedId = idMatch ? (idMatch[1] || idMatch[0]) : null;
     if (matchedId) {
       descriptionLine = descriptionLine.replace(new RegExp(`(?:id|sku|item)[\\s:-]*${matchedId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i'), '').trim();
-      descriptionLine = descriptionLine.replace(new RegExp(`\\b${matchedId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i'), '').trim();
+      descriptionLine = descriptionLine.replace(new RegExp(`#?\\b${matchedId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i'), '').trim();
     }
 
     descriptionLine = descriptionLine
