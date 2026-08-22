@@ -315,7 +315,12 @@ function parseScannedText(rawText = '') {
     const trimmed = line.trim();
     if (!trimmed) continue;
 
-    const priceMatch = trimmed.match(/\$\s*\d+(?:\.\d{1,2})?/);
+    // Prefer an explicit '$'-marked price; if OCR ran everything together
+    // on one line with no '$' (no newline to separate name from price
+    // either), fall back to a bare decimal token like "12.00" so it still
+    // gets pulled out of the name instead of swallowed into it.
+    const priceMatch = trimmed.match(/\$\s*\d+(?:\.\d{1,2})?/)
+      || trimmed.match(/\b\d+\.\d{2}\b/);
     if (priceMatch && !price) {
       price = priceMatch[0].replace(/\$/g, '').trim();
     }
@@ -435,7 +440,7 @@ async function runGeminiOCR(blob) {
               },
             },
             {
-              text: 'Extract all visible text from this image. Return only the text, line by line. Be accurate with handwriting.',
+              text: 'Extract all visible text from this image. Return only the text, line by line. Be accurate with handwriting. Prices are often handwritten with the cents as a small superscript next to or above the dollar amount (e.g. a large "27" with a small "00" beside it) — read these as a decimal price like "$27.00", not as a single whole number like "2700".',
             },
           ],
         },
