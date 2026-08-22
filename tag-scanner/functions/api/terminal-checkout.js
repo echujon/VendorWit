@@ -89,6 +89,7 @@ export async function onRequestPost(context) {
     body: JSON.stringify({
       idempotency_key: crypto.randomUUID(),
       checkout: {
+        amount_money: { amount: orderData.order.total_money.amount, currency: 'USD' },
         order_id: orderData.order.id,
         device_options: { device_id: deviceId, show_itemized_cart: true },
         note: body.note || ''
