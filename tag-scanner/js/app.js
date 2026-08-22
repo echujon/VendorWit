@@ -1132,7 +1132,6 @@ async function pollTerminalCheckout(checkoutId, attemptsLeft) {
 
 btnReviewTerminal.addEventListener('click', async () => {
   if (!cart.length) return;
-  const record = cartToRecord();
   const { squareDeviceId } = getSettings();
   if (!squareDeviceId) {
     toast('No Square Device ID configured (Settings)', 'error');
@@ -1144,7 +1143,10 @@ btnReviewTerminal.addEventListener('click', async () => {
     const res = await fetch('/api/terminal-checkout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ amount: record.price, note: record.name, deviceId: squareDeviceId })
+      body: JSON.stringify({
+        items: cart.map(item => ({ name: item.name, price: item.price, quantity: item.quantity })),
+        deviceId: squareDeviceId
+      })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Terminal checkout failed');
