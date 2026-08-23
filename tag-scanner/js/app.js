@@ -214,22 +214,17 @@ let lastRawText = '';
 
 async function processImage(blob) {
   hideAllResultCards();
-  // TEMP PERF INSTRUMENTATION — remove once the slow-OCR investigation is done.
-  const timings = [];
-  const t0 = performance.now();
 
   const skipOcr = scanMode === 'image';
   let rawText = '';
   if (!skipOcr) {
     showStatus('Running OCR...');
-    const tOcrStart = performance.now();
     try {
       rawText = await runOCR(blob);
     } catch (err) {
       console.warn('OCR failed:', err);
       rawText = '';
     }
-    timings.push(`OCR: ${Math.round(performance.now() - tOcrStart)}ms`);
   }
 
   lastRawText = rawText;
@@ -244,22 +239,22 @@ async function processImage(blob) {
   if (textMatch) {
     hideStatus();
     showMatchCard(textMatch, 'text');
-    timings.push(`total: ${Math.round(performance.now() - t0)}ms`);
-    console.log('[perf]', timings.join(' | '));
-    toast(timings.join(' | '), 'info');
     return;
   }
 
-  // No text match (or no text at all, e.g. an untagged handmade item) —
-  // try appearance-based matching before falling back to "no match".
-  // TEMP DEBUG — remove once the slow-OCR investigation is done: text
-  // matching failed, so surface exactly what OCR read (blocks until
-  // dismissed, so it's readable on a phone with no devtools attached).
-  alert(`Text match failed.\n\nOCR read:\n"${rawText || '(empty)'}"\n\nParsed uniqueId: "${parsedScan.uniqueId || '(none)'}"`);
+  // OCR mode with no text match: appearance-based matching is a slow
+  // fallback (loads a ~50MB on-device CLIP model + a Gemini round-trip),
+  // and was firing on every OCR rescan that OCR misread, making rescanning
+  // feel slow. Skip it here — explicit Image mode below still uses it,
+  // since that mode has no OCR text to match on in the first place.
+  if (!skipOcr) {
+    hideStatus();
+    showNoMatchCard(rawText);
+    return;
+  }
+
   showStatus('Checking appearance...');
-  const tEmbedStart = performance.now();
   const embeddings = await embedImage(blob);
-  timings.push(`embed: ${Math.round(performance.now() - tEmbedStart)}ms`);
   let visualMatch = null;
   if (embeddings.gemini) visualMatch = findByVisualMatch(embeddings.gemini, 'gemini');
   if (!visualMatch && embeddings.clip) visualMatch = findByVisualMatch(embeddings.clip, 'clip');
@@ -271,9 +266,6 @@ async function processImage(blob) {
   } else {
     showNoMatchCard(rawText);
   }
-  timings.push(`total: ${Math.round(performance.now() - t0)}ms`);
-  console.log('[perf]', timings.join(' | '));
-  toast(timings.join(' | '), 'info');
 }
 
 function hideAllResultCards() {
