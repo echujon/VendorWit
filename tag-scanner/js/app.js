@@ -214,17 +214,22 @@ let lastRawText = '';
 
 async function processImage(blob) {
   hideAllResultCards();
+  // TEMP PERF INSTRUMENTATION — remove once the slow-OCR investigation is done.
+  const timings = [];
+  const t0 = performance.now();
 
   const skipOcr = scanMode === 'image';
   let rawText = '';
   if (!skipOcr) {
     showStatus('Running OCR...');
+    const tOcrStart = performance.now();
     try {
       rawText = await runOCR(blob);
     } catch (err) {
       console.warn('OCR failed:', err);
       rawText = '';
     }
+    timings.push(`OCR: ${Math.round(performance.now() - tOcrStart)}ms`);
   }
 
   lastRawText = rawText;
@@ -239,13 +244,22 @@ async function processImage(blob) {
   if (textMatch) {
     hideStatus();
     showMatchCard(textMatch, 'text');
+    timings.push(`total: ${Math.round(performance.now() - t0)}ms`);
+    console.log('[perf]', timings.join(' | '));
+    toast(timings.join(' | '), 'info');
     return;
   }
 
   // No text match (or no text at all, e.g. an untagged handmade item) —
   // try appearance-based matching before falling back to "no match".
+  // TEMP DEBUG — remove once the slow-OCR investigation is done: text
+  // matching failed, so surface exactly what OCR read (blocks until
+  // dismissed, so it's readable on a phone with no devtools attached).
+  alert(`Text match failed.\n\nOCR read:\n"${rawText || '(empty)'}"\n\nParsed uniqueId: "${parsedScan.uniqueId || '(none)'}"`);
   showStatus('Checking appearance...');
+  const tEmbedStart = performance.now();
   const embeddings = await embedImage(blob);
+  timings.push(`embed: ${Math.round(performance.now() - tEmbedStart)}ms`);
   let visualMatch = null;
   if (embeddings.gemini) visualMatch = findByVisualMatch(embeddings.gemini, 'gemini');
   if (!visualMatch && embeddings.clip) visualMatch = findByVisualMatch(embeddings.clip, 'clip');
@@ -257,6 +271,9 @@ async function processImage(blob) {
   } else {
     showNoMatchCard(rawText);
   }
+  timings.push(`total: ${Math.round(performance.now() - t0)}ms`);
+  console.log('[perf]', timings.join(' | '));
+  toast(timings.join(' | '), 'info');
 }
 
 function hideAllResultCards() {
@@ -402,13 +419,19 @@ function showNewItemForm(rawText, prefill = {}) {
 
 async function runOCR(blob) {
   // Try Gemini first
+  const tGemini = performance.now();
   const geminiResult = await runGeminiOCR(blob);
   if (geminiResult !== null) {
+    console.log(`[perf] Gemini OCR: ${Math.round(performance.now() - tGemini)}ms`);
     return geminiResult;
   }
+  console.log(`[perf] Gemini OCR unavailable/failed after ${Math.round(performance.now() - tGemini)}ms, falling back to Tesseract`);
   // Fall back to Tesseract.js
   showStatus('Falling back to Tesseract OCR...');
-  return await runTesseractOCR(blob);
+  const tTesseract = performance.now();
+  const text = await runTesseractOCR(blob);
+  console.log(`[perf] Tesseract OCR: ${Math.round(performance.now() - tTesseract)}ms`);
+  return text;
 }
 
 async function runGeminiOCR(blob) {
