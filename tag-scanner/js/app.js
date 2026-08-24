@@ -818,7 +818,7 @@ btnUseSelection.addEventListener('click', () => {
 // --- Save / Discard (new item / edit form) ---
 function collectFormData() {
   return {
-    uniqueId: fieldUniqueId.value.trim(),
+    uniqueId: fieldUniqueId.value.replace(/\s+/g, ''),
     name: fieldName.value.trim(),
     price: fieldPrice.value.trim(),
     quantity: fieldQuantity.value.trim(),
