@@ -337,8 +337,9 @@ function parseScannedText(rawText = '') {
     // A '#'-prefixed token is an explicit, unambiguous unique-id marker —
     // check it first so it wins over the generic heuristics below. Requires
     // a letter+digit mix (e.g. #483A) so a stray '#5' (e.g. "item #5 of 10")
-    // isn't mistaken for a real id.
-    const idMatch = trimmed.match(/#(?=[A-Za-z0-9]*[A-Za-z])(?=[A-Za-z0-9]*\d)([A-Za-z0-9]+)/i)
+    // isn't mistaken for a real id. Allow whitespace between '#' and the id
+    // itself (e.g. "# 483A") since OCR sometimes inserts a gap there.
+    const idMatch = trimmed.match(/#\s*(?=[A-Za-z0-9]*[A-Za-z])(?=[A-Za-z0-9]*\d)([A-Za-z0-9]+)/i)
       || trimmed.match(/(?:id|sku|item)[\s:-]*([A-Za-z0-9]{3,})/i)
       || trimmed.match(/\b(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9]{4,}\b/);
     if (idMatch && !uniqueId) {
