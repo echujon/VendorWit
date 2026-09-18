@@ -29,6 +29,9 @@ const fieldQuantity = document.getElementById('field-quantity');
 const fieldLocation = document.getElementById('field-location');
 const ocrRaw = document.getElementById('ocr-raw');
 const ocrRawSelectable = document.getElementById('ocr-raw-selectable');
+const otherFieldsLabel = document.getElementById('other-fields-label');
+const otherFieldsDisplay = document.getElementById('other-fields-display');
+const matchOtherFields = document.getElementById('match-other-fields');
 const recordsList = document.getElementById('records-list');
 const scanOverlay = document.querySelector('.scan-overlay');
 const btnScanModeOcr = document.getElementById('btn-scan-mode-ocr');
@@ -491,6 +494,24 @@ function askIfRecordIsCorrect(data = {}) {
   return window.confirm(`Does this record look correct?\n\n${summary}`);
 }
 
+// Labels found on the tag that don't map to a known field (e.g.
+// "Consignor #: 42") - kept so they aren't silently dropped, shown
+// read-only, and carried through to the saved record by collectFormData().
+let lastOtherFields = {};
+
+function renderOtherFields(otherFields, labelEl, displayEl) {
+  const entries = Object.entries(otherFields || {});
+  if (!entries.length) {
+    labelEl.style.display = 'none';
+    displayEl.style.display = 'none';
+    displayEl.textContent = '';
+    return;
+  }
+  labelEl.style.display = '';
+  displayEl.style.display = '';
+  displayEl.textContent = entries.map(([k, v]) => `${k}: ${v}`).join('\n');
+}
+
 function showNewItemForm(rawText, prefill = {}) {
   const parsed = Object.keys(prefill).length ? prefill : (parseTicketTag(rawText) || parseScannedText(rawText));
 
@@ -505,6 +526,8 @@ function showNewItemForm(rawText, prefill = {}) {
   fieldPrice.value = parsed.price || prefill.price || '';
   fieldQuantity.value = parsed.quantity || prefill.quantity || '';
   fieldLocation.value = parsed.location || prefill.location || '';
+  lastOtherFields = parsed.otherFields || prefill.otherFields || {};
+  renderOtherFields(lastOtherFields, otherFieldsLabel, otherFieldsDisplay);
   resultCard.dataset.editId = prefill.id || '';
   hideAllResultCards();
   resultCard.classList.add('visible');
