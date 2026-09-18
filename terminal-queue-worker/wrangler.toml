@@ -1,0 +1,11 @@
+name = "vendorwit-terminal-queue"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+
+# Registers the TerminalQueue class so it exists as a bindable Durable
+# Object namespace. This Worker doesn't bind to it itself - the
+# tag-scanner Pages project does, cross-script, via script_name in its own
+# wrangler.toml. SQLite-backed storage keeps this on the Workers Free plan.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["TerminalQueue"]

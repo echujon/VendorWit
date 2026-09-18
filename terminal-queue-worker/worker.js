@@ -1,30 +1,12 @@
-// Durable Object: coordinates a shared pool of Square Terminals across
-// multiple simultaneous app instances. Holds the terminal registry and an
-// ordered wait queue in durable storage (survives hibernation/restarts),
-// and pushes live updates to connected clients over hibernatable
-// WebSockets so idle connections don't cost compute.
+// Standalone Worker whose only job is to host the TerminalQueue Durable
+// Object so the tag-scanner Pages project can bind to it cross-script (a
+// Pages project's own script can't self-host a Durable Object class -
+// Cloudflare requires the class to live in a separately deployed Worker,
+// referenced by script_name; see tag-scanner/wrangler.toml).
 //
-// Bound as env.TERMINAL_QUEUE (see wrangler.toml). Always addressed as the
-// single instance idFromName('default') — see functions/_shared/queue.js.
-//
-// HTTP surface (paths are relative; callers are the Pages Functions relays
-// under functions/api/queue/):
-//   GET    /connect?clientId=X  - upgrade to WebSocket, tagged with clientId
-//   GET    /state               - snapshot of terminals + queue length
-//   GET    /terminals           - list registered terminals
-//   POST   /terminals           - register/update one {deviceId, name}
-//   DELETE /terminals           - remove one {deviceId}
-//   POST   /enqueue             - {clientId, cart, note} -> assigns a free
-//                                  terminal immediately or queues the request
-//   POST   /dequeue             - {clientId} -> removes that client's
-//                                  pending request from the wait queue
-//                                  (customer/staff backed out before a
-//                                  terminal was assigned)
-//   POST   /terminal-status     - {deviceId, status: 'busy'|'available'}
-//                                  'available' assigns the next queued
-//                                  request to that terminal, if any
-//   GET    /my-status?clientId=X - assignment/queue position for a client
-//                                   that may have missed a WebSocket push
+// Deploy with `wrangler deploy` from this directory whenever this file
+// changes. Nothing calls this Worker's own fetch() directly - it's only
+// ever reached through the Durable Object binding from tag-scanner.
 
 export class TerminalQueue {
   constructor(state, env) {
@@ -230,3 +212,9 @@ function json(data, status = 200) {
     headers: { 'Content-Type': 'application/json' }
   });
 }
+
+export default {
+  async fetch() {
+    return new Response('TerminalQueue Durable Object host - not meant to be called directly.', { status: 200 });
+  }
+};

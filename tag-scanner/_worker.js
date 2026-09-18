@@ -1,19 +1,15 @@
 // Cloudflare Pages "Advanced Mode" entrypoint.
 //
-// This project used to rely on file-based routing (functions/api/**.js
-// mapping automatically to routes). That stops working once a Durable
-// Object is involved: Pages' auto-generated entrypoint for file-based
-// routing only wires up onRequest* handlers - it doesn't re-export other
-// top-level bindings like a Durable Object class, which wrangler needs to
-// find on *this* module. Advanced Mode (a single _worker.js at the deploy
-// root) is the documented way around that: it replaces file-based routing
-// entirely, so routing is done by hand below, but this file can export
-// whatever the runtime needs.
+// This project uses a single _worker.js instead of file-based Pages
+// Functions routing (functions/api/**.js auto-mapped to routes) so routing
+// is done by hand below. The actual handler logic still lives in
+// functions/**.js, unchanged - they're just plain modules now, invoked
+// directly instead of auto-routed.
 //
-// The actual handler logic still lives in functions/**.js, unchanged -
-// they're just plain modules now, invoked directly instead of auto-routed.
-
-export { TerminalQueue } from './functions/durable-objects/terminal-queue.js';
+// The TerminalQueue Durable Object class itself does NOT live in this
+// project - Pages can't self-host a Durable Object class, so it's defined
+// in the separate ../terminal-queue-worker/ Worker and bound cross-script
+// here via script_name (see wrangler.toml).
 
 import * as terminalCheckout from './functions/api/terminal-checkout.js';
 import * as terminalCheckoutStatus from './functions/api/terminal-checkout/[id].js';
