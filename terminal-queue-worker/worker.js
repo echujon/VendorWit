@@ -36,6 +36,7 @@ export class TerminalQueue {
     if (pathname === '/dequeue' && request.method === 'POST') return this.dequeue(request);
     if (pathname === '/terminal-status' && request.method === 'POST') return this.setTerminalStatus(request);
     if (pathname === '/my-status' && request.method === 'GET') return json(this.myStatus(url.searchParams.get('clientId')));
+    if (pathname === '/clear-queue' && request.method === 'POST') return this.clearQueue();
 
     return new Response('Not found', { status: 404 });
   }
@@ -86,11 +87,20 @@ export class TerminalQueue {
     if (!deviceId || !name) return json({ error: 'deviceId and name are required' }, 400);
 
     const existing = this.terminals.get(deviceId);
-    this.terminals.set(deviceId, {
+    const terminal = {
       name,
       status: existing?.status || 'available',
       queueId: existing?.queueId || null
-    });
+    };
+    this.terminals.set(deviceId, terminal);
+
+    // A terminal can become available here too (freshly added, or an
+    // existing one whose status was already 'available') - someone may
+    // already be waiting in the queue for exactly this.
+    if (terminal.status === 'available') {
+      await this.assignFromQueue(deviceId, terminal);
+    }
+
     await this.persistTerminals();
     this.broadcastState();
     return json({ ok: true });
@@ -165,17 +175,36 @@ export class TerminalQueue {
     }
     terminal.status = status;
 
-    if (status === 'available' && this.queue.length) {
-      const next = this.queue.shift();
-      terminal.status = 'busy';
-      terminal.queueId = null;
-      await this.persistQueue();
-      this.sendTo(next.clientId, { type: 'assigned', deviceId, name: terminal.name, queueId: next.id });
+    if (status === 'available') {
+      await this.assignFromQueue(deviceId, terminal);
     }
 
     await this.persistTerminals();
     this.broadcastState();
     return json({ ok: true });
+  }
+
+  // If anyone's waiting, hands this now-available terminal to whoever's
+  // been in line longest and flips it back to busy. Mutates `terminal` in
+  // place; callers persist afterward. Shared by setTerminalStatus (a
+  // checkout completing/canceling) and registerTerminal (adding a
+  // terminal, or fixing a stuck one via remove+re-add) - either can be the
+  // moment a terminal becomes available.
+  async assignFromQueue(deviceId, terminal) {
+    if (!this.queue.length) return;
+    const next = this.queue.shift();
+    terminal.status = 'busy';
+    terminal.queueId = null;
+    await this.persistQueue();
+    this.sendTo(next.clientId, { type: 'assigned', deviceId, name: terminal.name, queueId: next.id });
+  }
+
+  async clearQueue() {
+    const cleared = this.queue.length;
+    this.queue = [];
+    await this.persistQueue();
+    this.broadcastState();
+    return json({ ok: true, cleared });
   }
 
   myStatus(clientId) {

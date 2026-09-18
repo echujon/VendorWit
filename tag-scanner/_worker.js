@@ -19,6 +19,7 @@ import * as queueConnect from './functions/api/queue/connect.js';
 import * as queueEnqueue from './functions/api/queue/enqueue.js';
 import * as queueStatus from './functions/api/queue/status.js';
 import * as queueCancel from './functions/api/queue/cancel.js';
+import * as queueClear from './functions/api/queue/clear.js';
 import * as queueTerminals from './functions/api/queue/terminals.js';
 
 export default {
@@ -59,6 +60,9 @@ export default {
     }
     if (pathname === '/api/queue/cancel' && method === 'POST') {
       return queueCancel.onRequestPost(context);
+    }
+    if (pathname === '/api/queue/clear' && method === 'POST') {
+      return queueClear.onRequestPost(context);
     }
     if (pathname === '/api/queue/terminals') {
       if (method === 'GET') return queueTerminals.onRequestGet(context);
