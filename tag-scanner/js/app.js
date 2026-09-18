@@ -301,6 +301,17 @@ function showMatchCard(record, matchType = 'text', score = null) {
   document.getElementById('match-quantity').textContent = record.quantity || '—';
   document.getElementById('match-location').textContent = record.location || '—';
 
+  const otherEntries = Object.entries(record.otherFields || {});
+  if (otherEntries.length) {
+    matchOtherFields.style.display = '';
+    matchOtherFields.innerHTML = otherEntries
+      .map(([k, v]) => `<div class="match-row"><span class="match-label">${esc(k)}</span><span>${esc(v)}</span></div>`)
+      .join('');
+  } else {
+    matchOtherFields.style.display = 'none';
+    matchOtherFields.innerHTML = '';
+  }
+
   const badge = document.getElementById('match-badge');
   badge.textContent = matchType === 'visual'
     ? `Matched by appearance (${Math.round(score * 100)}%)`
@@ -958,7 +969,8 @@ function collectFormData() {
     color: fieldColor.value.trim(),
     price: fieldPrice.value.trim(),
     quantity: fieldQuantity.value.trim(),
-    location: fieldLocation.value.trim()
+    location: fieldLocation.value.trim(),
+    otherFields: lastOtherFields
   };
 }
 

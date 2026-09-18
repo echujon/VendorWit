@@ -107,20 +107,24 @@ export function findByVisualMatch(queryEmbedding, source) {
 
 export function exportCSV() {
   const records = getRecords();
-  const rows = [['Unique ID', 'Name', 'Item', 'Brand', 'Size', 'Color', 'Price', 'Quantity', 'Location', 'Stripe ID', 'Date']];
-  records.forEach(r => rows.push([
-    `"${(r.uniqueId || '').replace(/"/g, '""')}"`,
-    `"${(r.name || '').replace(/"/g, '""')}"`,
-    `"${(r.item || '').replace(/"/g, '""')}"`,
-    `"${(r.brand || '').replace(/"/g, '""')}"`,
-    `"${(r.size || '').replace(/"/g, '""')}"`,
-    `"${(r.color || '').replace(/"/g, '""')}"`,
-    r.price || '',
-    r.quantity || '',
-    `"${(r.location || '').replace(/"/g, '""')}"`,
-    r.stripeId || '',
-    r.createdAt || ''
-  ]));
+  const rows = [['Unique ID', 'Name', 'Item', 'Brand', 'Size', 'Color', 'Price', 'Quantity', 'Location', 'Other Fields', 'Stripe ID', 'Date']];
+  records.forEach(r => {
+    const otherFields = Object.entries(r.otherFields || {}).map(([k, v]) => `${k}: ${v}`).join('; ');
+    rows.push([
+      `"${(r.uniqueId || '').replace(/"/g, '""')}"`,
+      `"${(r.name || '').replace(/"/g, '""')}"`,
+      `"${(r.item || '').replace(/"/g, '""')}"`,
+      `"${(r.brand || '').replace(/"/g, '""')}"`,
+      `"${(r.size || '').replace(/"/g, '""')}"`,
+      `"${(r.color || '').replace(/"/g, '""')}"`,
+      r.price || '',
+      r.quantity || '',
+      `"${(r.location || '').replace(/"/g, '""')}"`,
+      `"${otherFields.replace(/"/g, '""')}"`,
+      r.stripeId || '',
+      r.createdAt || ''
+    ]);
+  });
   const csv = rows.map(r => r.join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
