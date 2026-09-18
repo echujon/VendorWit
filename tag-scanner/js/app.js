@@ -1,4 +1,4 @@
-import { getRecords, saveRecord, updateRecord, deleteRecord, exportCSV, getSettings, findByUniqueId, findByVisualMatch } from './storage.js';
+import { getRecords, saveRecord, updateRecord, deleteRecord, exportCSV, getSettings, getClientId, findByUniqueId, findByVisualMatch } from './storage.js';
 import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0/+esm';
 import QRCode from 'https://cdn.jsdelivr.net/npm/qrcode@1.5.4/+esm';
 
@@ -60,6 +60,7 @@ const reviewCartList = document.getElementById('review-cart-list');
 const reviewTotalDisplay = document.getElementById('review-total-display');
 const btnReviewTerminal = document.getElementById('btn-review-terminal');
 const terminalStatus = document.getElementById('terminal-status');
+const btnCancelTerminal = document.getElementById('btn-cancel-terminal');
 const btnReviewVenmo = document.getElementById('btn-review-venmo');
 const btnReviewSquare = document.getElementById('btn-review-square');
 const btnReviewComplete = document.getElementById('btn-review-complete');
@@ -298,6 +299,11 @@ function showMatchCard(record, matchType = 'text', score = null) {
 
   // "Not a match" only makes sense when this came from a live scan.
   btnNotAMatch.style.display = matchType === 'saved' ? 'none' : '';
+
+  const { requireTerminalOnly } = getSettings();
+  const paymentDisplay = requireTerminalOnly ? 'none' : '';
+  btnSquareMatch.style.display = paymentDisplay;
+  btnVenmoMatch.style.display = paymentDisplay;
 
   const photo = document.getElementById('match-photo');
   if (record.photoDataUrl) {
@@ -1110,9 +1116,19 @@ function closeReviewModal() {
   reviewModal.classList.add('hidden');
   stopTerminalPolling();
   clearTerminalStatus();
+  hideCancelButton();
   btnReviewTerminal.disabled = false;
+  waitingForAssignment = false;
+  activeCheckoutId = null;
 }
-function openReviewModal() { reviewModal.classList.remove('hidden'); }
+function openReviewModal() {
+  const { requireTerminalOnly } = getSettings();
+  const display = requireTerminalOnly ? 'none' : '';
+  btnReviewVenmo.style.display = display;
+  btnReviewSquare.style.display = display;
+  btnReviewComplete.style.display = display;
+  reviewModal.classList.remove('hidden');
+}
 
 function closeVenmoModal() {
   venmoModal.classList.add('hidden');
@@ -1137,6 +1153,8 @@ async function pollTerminalCheckout(checkoutId, attemptsLeft) {
 
     if (data.status === 'COMPLETED') {
       clearTerminalStatus();
+      hideCancelButton();
+      activeCheckoutId = null;
       btnReviewTerminal.disabled = false;
       closeReviewModal();
       completeSale();
@@ -1144,6 +1162,8 @@ async function pollTerminalCheckout(checkoutId, attemptsLeft) {
     }
     if (data.status === 'CANCELED') {
       clearTerminalStatus();
+      hideCancelButton();
+      activeCheckoutId = null;
       btnReviewTerminal.disabled = false;
       toast('Terminal checkout canceled', 'error');
       return;
@@ -1153,37 +1173,128 @@ async function pollTerminalCheckout(checkoutId, attemptsLeft) {
     terminalPollTimer = setTimeout(() => pollTerminalCheckout(checkoutId, attemptsLeft - 1), 2000);
   } catch (err) {
     clearTerminalStatus();
+    hideCancelButton();
+    activeCheckoutId = null;
     btnReviewTerminal.disabled = false;
     toast('Terminal status error: ' + err.message, 'error');
   }
 }
 
-btnReviewTerminal.addEventListener('click', async () => {
-  if (!cart.length) return;
-  const { squareDeviceId } = getSettings();
-  if (!squareDeviceId) {
-    toast('No Square Device ID configured (Settings)', 'error');
-    return;
-  }
-  btnReviewTerminal.disabled = true;
+// --- Terminal queue ---
+// Multiple app instances can share fewer physical Square Terminals: a
+// checkout either gets a free terminal immediately, or waits in a shared
+// queue (held by the TerminalQueue Durable Object) until one frees up. The
+// WebSocket delivers that "assigned" push in real time; see
+// functions/durable-objects/terminal-queue.js for the server side.
+let queueSocket = null;
+let waitingForAssignment = false;
+let activeCheckoutId = null;
+
+function showCancelButton() { btnCancelTerminal.style.display = ''; }
+function hideCancelButton() { btnCancelTerminal.style.display = 'none'; }
+
+function connectQueueSocket() {
+  if (queueSocket && (queueSocket.readyState === WebSocket.OPEN || queueSocket.readyState === WebSocket.CONNECTING)) return;
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  queueSocket = new WebSocket(`${protocol}//${location.host}/api/queue/connect?clientId=${getClientId()}`);
+  queueSocket.addEventListener('message', (event) => {
+    let msg;
+    try { msg = JSON.parse(event.data); } catch { return; }
+    if (msg.type === 'assigned' && waitingForAssignment) {
+      waitingForAssignment = false;
+      sendCheckoutToDevice(msg.deviceId);
+    }
+  });
+  queueSocket.addEventListener('close', () => {
+    setTimeout(connectQueueSocket, 2000);
+  });
+}
+connectQueueSocket();
+
+async function sendCheckoutToDevice(deviceId) {
   setTerminalStatus('Sending to Terminal...');
+  showCancelButton();
   try {
     const res = await fetch('/api/terminal-checkout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         items: cart.map(item => ({ name: item.name, price: item.price, quantity: item.quantity })),
-        deviceId: squareDeviceId
+        deviceId
       })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Terminal checkout failed');
+    activeCheckoutId = data.checkoutId;
     setTerminalStatus(`Waiting for card... (${data.status})`);
     pollTerminalCheckout(data.checkoutId, 45);
   } catch (err) {
     clearTerminalStatus();
+    hideCancelButton();
     btnReviewTerminal.disabled = false;
     toast('Terminal error: ' + err.message, 'error');
+  }
+}
+
+btnReviewTerminal.addEventListener('click', async () => {
+  if (!cart.length) return;
+  btnReviewTerminal.disabled = true;
+  waitingForAssignment = false;
+  activeCheckoutId = null;
+  setTerminalStatus('Finding a free terminal...');
+  showCancelButton();
+  connectQueueSocket();
+  try {
+    const res = await fetch('/api/queue/enqueue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        clientId: getClientId(),
+        cart: cart.map(item => ({ name: item.name, price: item.price, quantity: item.quantity }))
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Could not reach the terminal queue');
+
+    if (data.status === 'assigned') {
+      sendCheckoutToDevice(data.deviceId);
+    } else {
+      waitingForAssignment = true;
+      setTerminalStatus(`Waiting in line for a terminal... (position ${data.position})`);
+    }
+  } catch (err) {
+    clearTerminalStatus();
+    hideCancelButton();
+    btnReviewTerminal.disabled = false;
+    toast('Terminal queue error: ' + err.message, 'error');
+  }
+});
+
+btnCancelTerminal.addEventListener('click', async () => {
+  btnCancelTerminal.disabled = true;
+  try {
+    if (waitingForAssignment) {
+      waitingForAssignment = false;
+      await fetch('/api/queue/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId: getClientId() })
+      });
+      toast('Left the terminal queue', 'success');
+    } else if (activeCheckoutId) {
+      const checkoutId = activeCheckoutId;
+      activeCheckoutId = null;
+      stopTerminalPolling();
+      await fetch(`/api/terminal-checkout/${checkoutId}/cancel`, { method: 'POST' });
+      toast('Terminal checkout canceled', 'success');
+    }
+  } catch (err) {
+    toast('Cancel failed: ' + err.message, 'error');
+  } finally {
+    clearTerminalStatus();
+    hideCancelButton();
+    btnReviewTerminal.disabled = false;
+    btnCancelTerminal.disabled = false;
   }
 });
 

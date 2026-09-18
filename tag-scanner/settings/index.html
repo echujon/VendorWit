@@ -57,11 +57,25 @@
     </div>
 
     <div class="settings-section">
-      <h2>Square Terminal</h2>
-      <p>Sends card charges to a paired Square Terminal. Find the device id by pairing it (Square's device code flow) and calling Square's Devices API — it looks like "device:XXXXXXXXXXXXXXXX".</p>
-      <div class="settings-field">
-        <label for="square-device-id">Square Device ID</label>
-        <input type="text" id="square-device-id" placeholder="device:...">
+      <h2>Square Terminals</h2>
+      <p>Register each paired Square Terminal here. When several people use the app at once, checkouts queue automatically and route to whichever terminal frees up next. Find each device id by pairing it (Square's device code flow) and calling Square's Devices API — it looks like "device:XXXXXXXXXXXXXXXX".</p>
+      <div id="terminal-list"></div>
+      <div class="settings-field terminal-add-row" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:flex-end;">
+        <div>
+          <label for="new-terminal-name">Name</label>
+          <input type="text" id="new-terminal-name" placeholder="Register 1">
+        </div>
+        <div>
+          <label for="new-terminal-device-id">Device ID</label>
+          <input type="text" id="new-terminal-device-id" placeholder="device:...">
+        </div>
+        <button class="btn btn-outline" id="btn-add-terminal" type="button">Add Terminal</button>
+      </div>
+      <div class="settings-field" style="margin-top:1rem;">
+        <label style="display:flex;align-items:center;gap:0.5rem;">
+          <input type="checkbox" id="require-terminal-only" style="width:auto;">
+          Require Terminal for checkout (hides Venmo QR, Send to Square POS, and Complete Sale on the Review Sale screen)
+        </label>
       </div>
     </div>
 
@@ -86,22 +100,107 @@
     document.getElementById('gemini-key').value = localStorage.getItem('gemini_api_key') || '';
     document.getElementById('stripe-key').value = settings.stripeKey || '';
     document.getElementById('square-app-id').value = settings.squareAppId || '';
-    document.getElementById('square-device-id').value = settings.squareDeviceId || '';
     document.getElementById('venmo-username').value = settings.venmoUsername || '';
+    document.getElementById('require-terminal-only').checked = !!settings.requireTerminalOnly;
 
     document.getElementById('btn-save-settings').addEventListener('click', () => {
       saveSettings({
         anthropicKey: document.getElementById('anthropic-key').value.trim(),
         stripeKey: document.getElementById('stripe-key').value.trim(),
         squareAppId: document.getElementById('square-app-id').value.trim(),
-        squareDeviceId: document.getElementById('square-device-id').value.trim(),
-        venmoUsername: document.getElementById('venmo-username').value.trim()
+        venmoUsername: document.getElementById('venmo-username').value.trim(),
+        requireTerminalOnly: document.getElementById('require-terminal-only').checked
       });
       localStorage.setItem('gemini_api_key', document.getElementById('gemini-key').value.trim());
       const notice = document.getElementById('save-notice');
       notice.style.display = 'block';
       setTimeout(() => { notice.style.display = 'none'; }, 2000);
     });
+
+    // Terminal registry lives server-side (in the TerminalQueue Durable
+    // Object) since it's shared across every device running the app, not a
+    // per-browser preference.
+    const terminalList = document.getElementById('terminal-list');
+
+    async function loadTerminals() {
+      terminalList.textContent = 'Loading...';
+      try {
+        const res = await fetch('/api/queue/terminals');
+        const terminals = await res.json();
+        if (!res.ok) throw new Error(terminals.error || 'Failed to load terminals');
+        renderTerminals(terminals);
+      } catch (err) {
+        terminalList.textContent = 'Could not load terminals: ' + err.message;
+      }
+    }
+
+    function renderTerminals(terminals) {
+      terminalList.innerHTML = '';
+      if (!terminals.length) {
+        terminalList.textContent = 'No terminals registered yet.';
+        return;
+      }
+      for (const t of terminals) {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid var(--border, #e8d5c0);';
+        row.innerHTML = `
+          <span style="flex:1;">
+            <strong>${escapeHtml(t.name)}</strong>
+            <span style="color:var(--muted,#8a7060);font-size:0.85rem;"> — ${escapeHtml(t.deviceId)} — ${escapeHtml(t.status)}</span>
+          </span>
+        `;
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'btn btn-secondary';
+        removeBtn.type = 'button';
+        removeBtn.textContent = 'Remove';
+        removeBtn.style.cssText = 'font-size:0.8rem;padding:0.3rem 0.6rem;';
+        removeBtn.addEventListener('click', async () => {
+          removeBtn.disabled = true;
+          await fetch('/api/queue/terminals', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ deviceId: t.deviceId })
+          });
+          loadTerminals();
+        });
+        row.appendChild(removeBtn);
+        terminalList.appendChild(row);
+      }
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    document.getElementById('btn-add-terminal').addEventListener('click', async () => {
+      const name = document.getElementById('new-terminal-name').value.trim();
+      const deviceId = document.getElementById('new-terminal-device-id').value.trim();
+      if (!name || !deviceId) return;
+      const btn = document.getElementById('btn-add-terminal');
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/queue/terminals', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, deviceId })
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || 'Failed to add terminal');
+        }
+        document.getElementById('new-terminal-name').value = '';
+        document.getElementById('new-terminal-device-id').value = '';
+        loadTerminals();
+      } catch (err) {
+        alert(err.message);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    loadTerminals();
   </script>
 </body>
 </html>

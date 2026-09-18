@@ -1,10 +1,9 @@
 // Cloudflare Pages Function: POST /api/webhooks/square
-// Receives Square event notifications (e.g. terminal.checkout.updated).
-// Not currently wired to anything user-facing — the live "waiting for card"
-// UI is driven by polling (see /api/terminal-checkout/[id].js). This exists
-// so a reliable server-side record of checkout outcomes exists independent
-// of whether the browser tab stayed open/connected, and as the foundation
-// for real push (Durable Objects) if that's ever built later.
+// Receives Square event notifications (e.g. terminal.checkout.updated) and
+// frees the terminal in the TerminalQueue Durable Object when a checkout
+// completes or cancels, independent of whether the browser tab that sent it
+// stayed open (the /api/terminal-checkout/[id].js poll does the same thing,
+// so this is a redundant, tab-independent path rather than the only one).
 //
 // Required environment variables:
 //   SQUARE_WEBHOOK_SIGNATURE_KEY   - from the webhook subscription in the
@@ -14,6 +13,8 @@
 //                                     byte-for-byte, including https:// and
 //                                     no trailing slash unless registered
 //                                     with one)
+
+import { notifyTerminalStatus } from '../../_shared/queue.js';
 
 export async function onRequestPost(context) {
   const { request, env } = context;
@@ -42,9 +43,13 @@ export async function onRequestPost(context) {
     return new Response('Invalid JSON', { status: 400 });
   }
 
-  // Placeholder: log for now. Wire this into persistent storage or a
-  // Durable Object push here once one of those exists.
-  console.log('Square webhook received:', event.type, event.data?.id);
+  if (event.type === 'terminal.checkout.updated') {
+    const checkout = event.data?.object?.checkout;
+    const deviceId = checkout?.device_options?.device_id;
+    if (checkout?.status === 'COMPLETED' || checkout?.status === 'CANCELED') {
+      context.waitUntil?.(notifyTerminalStatus(env, deviceId, 'available'));
+    }
+  }
 
   return new Response('OK', { status: 200 });
 }

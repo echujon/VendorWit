@@ -1,5 +1,17 @@
 const RECORDS_KEY = 'tag_scanner_records';
 const SETTINGS_KEY = 'tag_scanner_settings';
+const CLIENT_ID_KEY = 'tag_scanner_client_id';
+
+// Stable per-device id used to route terminal-queue assignments back to
+// whichever app instance requested a checkout.
+export function getClientId() {
+  let id = localStorage.getItem(CLIENT_ID_KEY);
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem(CLIENT_ID_KEY, id);
+  }
+  return id;
+}
 
 export function getRecords() {
   let records;

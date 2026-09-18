@@ -1,0 +1,12 @@
+# Local Cloudflare Workers/Pages dev state (Miniflare-emulated storage, cache)
+.wrangler/
+
+# Local secrets for `wrangler dev` / `wrangler pages dev`
+.dev.vars
+.dev.vars.*
+
+# Node (in case any tooling gets added later)
+node_modules/
+
+# OS/editor cruft
+.DS_Store

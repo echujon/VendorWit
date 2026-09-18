@@ -12,6 +12,8 @@
 //   SQUARE_ACCESS_TOKEN  - sandbox or production access token
 //   SQUARE_ENVIRONMENT   - "production" or "sandbox" (defaults to sandbox)
 
+import { notifyTerminalStatus } from '../_shared/queue.js';
+
 export async function onRequestPost(context) {
   const { request, env } = context;
 
@@ -70,12 +72,27 @@ export async function onRequestPost(context) {
   }
   const locationId = merchantData.merchant.main_location_id;
 
+  // Apply whatever sales tax is already configured in the Square account's
+  // catalog, rather than a rate hardcoded/typed into this app — so tax stays
+  // in sync with whatever the merchant sets up in Square. Referencing by
+  // catalog_object_id makes Square pull the name/percentage/inclusion type
+  // from the catalog object itself; scope ORDER applies it to the whole
+  // order total once, not per line item.
+  const taxRes = await fetch(`${baseUrl}/v2/catalog/list?types=TAX`, { headers });
+  const taxData = await taxRes.json();
+  if (!taxRes.ok) {
+    return json({ error: taxData.errors?.[0]?.detail || 'Square API error (catalog tax lookup)' }, taxRes.status);
+  }
+  const taxes = (taxData.objects || [])
+    .filter(obj => !obj.is_deleted && obj.tax_data?.enabled !== false)
+    .map(obj => ({ catalog_object_id: obj.id, scope: 'ORDER' }));
+
   const orderRes = await fetch(`${baseUrl}/v2/orders`, {
     method: 'POST',
     headers,
     body: JSON.stringify({
       idempotency_key: crypto.randomUUID(),
-      order: { location_id: locationId, line_items: lineItems }
+      order: { location_id: locationId, line_items: lineItems, taxes }
     })
   });
   const orderData = await orderRes.json();
@@ -101,6 +118,8 @@ export async function onRequestPost(context) {
   if (!squareRes.ok) {
     return json({ error: data.errors?.[0]?.detail || 'Square API error (checkout)' }, squareRes.status);
   }
+
+  context.waitUntil?.(notifyTerminalStatus(env, deviceId, 'busy'));
 
   return json({ checkoutId: data.checkout.id, status: data.checkout.status });
 }

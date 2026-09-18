@@ -428,6 +428,8 @@ main { flex: 1; padding: 1.25rem; padding-bottom: 5rem; display: flex; flex-dire
 
 #review-total-display { font-size: 1.25rem; font-weight: 700; color: var(--brand-dark); }
 
+#btn-cancel-terminal { flex: none; width: 100%; }
+
 #terminal-status {
   font-size: 0.9rem;
   color: var(--muted);

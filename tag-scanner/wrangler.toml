@@ -1,0 +1,14 @@
+name = "vendorwit-tag-scanner"
+compatibility_date = "2025-01-01"
+pages_build_output_dir = "."
+
+# TerminalQueue coordinates a shared pool of Square Terminals across
+# multiple simultaneous app instances (see functions/durable-objects/).
+# SQLite-backed storage keeps this on the Workers Free plan.
+[[durable_objects.bindings]]
+name = "TERMINAL_QUEUE"
+class_name = "TerminalQueue"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["TerminalQueue"]
