@@ -71,6 +71,7 @@
         </div>
         <button class="btn btn-outline" id="btn-add-terminal" type="button">Add Terminal</button>
       </div>
+      <button class="btn btn-secondary" id="btn-clear-queue" type="button" style="margin-top:0.75rem;font-size:0.85rem;">Clear stuck wait queue</button>
       <div class="settings-field" style="margin-top:1rem;">
         <label style="display:flex;align-items:center;gap:0.5rem;">
           <input type="checkbox" id="require-terminal-only" style="width:auto;">
@@ -149,6 +150,33 @@
             <span style="color:var(--muted,#8a7060);font-size:0.85rem;"> — ${escapeHtml(t.deviceId)} — ${escapeHtml(t.status)}</span>
           </span>
         `;
+        if (t.status !== 'available') {
+          const markAvailableBtn = document.createElement('button');
+          markAvailableBtn.className = 'btn btn-outline';
+          markAvailableBtn.type = 'button';
+          markAvailableBtn.textContent = 'Mark Available';
+          markAvailableBtn.title = 'Stuck "busy" with no in-progress sale? Reset it.';
+          markAvailableBtn.style.cssText = 'font-size:0.8rem;padding:0.3rem 0.6rem;';
+          markAvailableBtn.addEventListener('click', async () => {
+            markAvailableBtn.disabled = true;
+            // Re-registering a terminal from scratch (remove, then add back)
+            // always starts it as "available" - an in-place edit deliberately
+            // preserves whatever status it already had.
+            await fetch('/api/queue/terminals', {
+              method: 'DELETE',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ deviceId: t.deviceId })
+            });
+            await fetch('/api/queue/terminals', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: t.name, deviceId: t.deviceId })
+            });
+            loadTerminals();
+          });
+          row.appendChild(markAvailableBtn);
+        }
+
         const removeBtn = document.createElement('button');
         removeBtn.className = 'btn btn-secondary';
         removeBtn.type = 'button';
@@ -193,6 +221,22 @@
         document.getElementById('new-terminal-name').value = '';
         document.getElementById('new-terminal-device-id').value = '';
         loadTerminals();
+      } catch (err) {
+        alert(err.message);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById('btn-clear-queue').addEventListener('click', async () => {
+      if (!confirm('Clear everyone currently waiting in the terminal queue? Anyone mid-wait will need to tap "Charge via Terminal" again.')) return;
+      const btn = document.getElementById('btn-clear-queue');
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/queue/clear', { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to clear queue');
+        alert(`Cleared ${data.cleared} waiting request(s).`);
       } catch (err) {
         alert(err.message);
       } finally {
