@@ -237,7 +237,7 @@ async function processImage(blob) {
 
   lastRawText = rawText;
 
-  const parsedScan = parseScannedText(rawText);
+  const parsedScan = parseTicketTag(rawText) || parseScannedText(rawText);
   const textMatch = parsedScan.uniqueId
     ? findByUniqueId(parsedScan.uniqueId)
     : rawText.trim()

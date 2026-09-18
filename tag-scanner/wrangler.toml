@@ -1,14 +1,19 @@
-name = "vendorwit-tag-scanner"
+name = "tag-scanner"
 compatibility_date = "2025-01-01"
 pages_build_output_dir = "."
 
 # TerminalQueue coordinates a shared pool of Square Terminals across
 # multiple simultaneous app instances (see functions/durable-objects/).
 # SQLite-backed storage keeps this on the Workers Free plan.
+#
+# Pages' wrangler.toml support (BETA) doesn't accept a top-level
+# [[migrations]] block (that's Workers-only) and requires a Durable Object
+# binding to name the Worker it lives in via script_name - here that's this
+# same Pages project, self-referenced by its own `name` above. The actual
+# class-registration migration for a Pages-hosted Durable Object happens in
+# the Cloudflare dashboard (Workers & Pages > this project > Settings >
+# Functions > Durable Object bindings > Add binding), not in this file.
 [[durable_objects.bindings]]
 name = "TERMINAL_QUEUE"
 class_name = "TerminalQueue"
-
-[[migrations]]
-tag = "v1"
-new_sqlite_classes = ["TerminalQueue"]
+script_name = "tag-scanner"
