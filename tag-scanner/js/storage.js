@@ -107,10 +107,14 @@ export function findByVisualMatch(queryEmbedding, source) {
 
 export function exportCSV() {
   const records = getRecords();
-  const rows = [['Unique ID', 'Name', 'Price', 'Quantity', 'Location', 'Stripe ID', 'Date']];
+  const rows = [['Unique ID', 'Name', 'Item', 'Brand', 'Size', 'Color', 'Price', 'Quantity', 'Location', 'Stripe ID', 'Date']];
   records.forEach(r => rows.push([
     `"${(r.uniqueId || '').replace(/"/g, '""')}"`,
     `"${(r.name || '').replace(/"/g, '""')}"`,
+    `"${(r.item || '').replace(/"/g, '""')}"`,
+    `"${(r.brand || '').replace(/"/g, '""')}"`,
+    `"${(r.size || '').replace(/"/g, '""')}"`,
+    `"${(r.color || '').replace(/"/g, '""')}"`,
     r.price || '',
     r.quantity || '',
     `"${(r.location || '').replace(/"/g, '""')}"`,

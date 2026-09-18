@@ -20,6 +20,10 @@ const resultCard = document.getElementById('result-card');
 const resultCardTitle = document.getElementById('result-card-title');
 const fieldUniqueId = document.getElementById('field-unique-id');
 const fieldName = document.getElementById('field-name');
+const fieldItem = document.getElementById('field-item');
+const fieldBrand = document.getElementById('field-brand');
+const fieldSize = document.getElementById('field-size');
+const fieldColor = document.getElementById('field-color');
 const fieldPrice = document.getElementById('field-price');
 const fieldQuantity = document.getElementById('field-quantity');
 const fieldLocation = document.getElementById('field-location');
@@ -286,6 +290,10 @@ function showMatchCard(record, matchType = 'text', score = null) {
   document.getElementById('match-card-title').textContent = matchType === 'saved' ? 'Item Details' : 'Matched Item';
   document.getElementById('match-uniqueId').textContent = record.uniqueId || '—';
   document.getElementById('match-name').textContent = record.name || '—';
+  document.getElementById('match-item').textContent = record.item || '—';
+  document.getElementById('match-brand').textContent = record.brand || '—';
+  document.getElementById('match-size').textContent = record.size || '—';
+  document.getElementById('match-color').textContent = record.color || '—';
   document.getElementById('match-price').textContent = record.price ? `$${record.price}` : '—';
   document.getElementById('match-quantity').textContent = record.quantity || '—';
   document.getElementById('match-location').textContent = record.location || '—';
@@ -318,6 +326,63 @@ function showMatchCard(record, matchType = 'text', score = null) {
 
   matchCard.classList.add('visible');
   matchCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// Consignment-style tags print one labeled field per line (Ticket No:,
+// Name:, Item:, Brand:, Size:, Color:, Price $:). "Ticket No" is the
+// identifier used to match/re-scan an item, so this only fires — and wins
+// over the generic heuristic parser below — when it actually finds one.
+const TICKET_FIELD_PATTERNS = [
+  { key: 'uniqueId', label: /ticket\s*no\.?/i },
+  { key: 'name', label: /name/i },
+  { key: 'item', label: /item/i },
+  { key: 'brand', label: /brand/i },
+  { key: 'size', label: /size/i },
+  { key: 'color', label: /colou?r/i },
+  { key: 'price', label: /price\s*\$?/i }
+];
+
+function parseTicketTag(rawText = '') {
+  const lines = (rawText || '').replace(/\r\n?/g, '\n').split('\n').map(l => l.trim()).filter(Boolean);
+  const fields = {};
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    for (const { key, label } of TICKET_FIELD_PATTERNS) {
+      if (fields[key] !== undefined) continue;
+      const match = line.match(new RegExp(`^${label.source}\\s*[:#]?\\s*(.*)$`, 'i'));
+      if (!match) continue;
+
+      let value = match[1].trim();
+      // Label printed with the value left blank on the same line — OCR
+      // sometimes puts a handwritten value on the next line instead.
+      const nextLine = lines[i + 1];
+      if (!value && nextLine && !TICKET_FIELD_PATTERNS.some(p => new RegExp(`^${p.label.source}\\b`, 'i').test(nextLine))) {
+        value = nextLine.trim();
+      }
+      fields[key] = value;
+      break;
+    }
+  }
+
+  if (!fields.uniqueId) return null;
+
+  if (fields.price) {
+    const priceMatch = fields.price.match(/\d+(?:\.\d{1,2})?/);
+    fields.price = priceMatch ? priceMatch[0] : '';
+  }
+
+  return {
+    uniqueId: fields.uniqueId.replace(/\s+/g, ''),
+    name: fields.name || '',
+    item: fields.item || '',
+    brand: fields.brand || '',
+    size: fields.size || '',
+    color: fields.color || '',
+    price: fields.price || '',
+    quantity: '',
+    location: ''
+  };
 }
 
 function parseScannedText(rawText = '') {
@@ -385,8 +450,12 @@ function parseScannedText(rawText = '') {
 
 function askIfRecordIsCorrect(data = {}) {
   const summary = [
-    data.uniqueId ? `ID: ${data.uniqueId}` : null,
+    data.uniqueId ? `Ticket No: ${data.uniqueId}` : null,
     data.name ? `Name: ${data.name}` : null,
+    data.item ? `Item: ${data.item}` : null,
+    data.brand ? `Brand: ${data.brand}` : null,
+    data.size ? `Size: ${data.size}` : null,
+    data.color ? `Color: ${data.color}` : null,
     data.price ? `Price: $${data.price}` : null
   ].filter(Boolean).join('\n');
 
@@ -395,12 +464,16 @@ function askIfRecordIsCorrect(data = {}) {
 }
 
 function showNewItemForm(rawText, prefill = {}) {
-  const parsed = Object.keys(prefill).length ? prefill : parseScannedText(rawText);
+  const parsed = Object.keys(prefill).length ? prefill : (parseTicketTag(rawText) || parseScannedText(rawText));
 
   resultCardTitle.textContent = prefill.id ? 'Edit Item' : 'New Item';
   ocrRawSelectable.textContent = rawText || '';
   fieldUniqueId.value = parsed.uniqueId || prefill.uniqueId || '';
   fieldName.value = parsed.name || prefill.name || '';
+  fieldItem.value = parsed.item || prefill.item || '';
+  fieldBrand.value = parsed.brand || prefill.brand || '';
+  fieldSize.value = parsed.size || prefill.size || '';
+  fieldColor.value = parsed.color || prefill.color || '';
   fieldPrice.value = parsed.price || prefill.price || '';
   fieldQuantity.value = parsed.quantity || prefill.quantity || '';
   fieldLocation.value = parsed.location || prefill.location || '';
@@ -828,6 +901,10 @@ function collectFormData() {
   return {
     uniqueId: fieldUniqueId.value.replace(/\s+/g, ''),
     name: fieldName.value.trim(),
+    item: fieldItem.value.trim(),
+    brand: fieldBrand.value.trim(),
+    size: fieldSize.value.trim(),
+    color: fieldColor.value.trim(),
     price: fieldPrice.value.trim(),
     quantity: fieldQuantity.value.trim(),
     location: fieldLocation.value.trim()
