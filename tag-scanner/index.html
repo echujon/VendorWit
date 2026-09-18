@@ -97,6 +97,7 @@
         <div class="match-row"><span class="match-label">Quantity</span><span id="match-quantity"></span></div>
         <div class="match-row"><span class="match-label">Location</span><span id="match-location"></span></div>
       </div>
+      <div class="match-info" id="match-other-fields" style="display:none;"></div>
       <img id="venmo-qr" class="match-photo hidden" alt="Venmo payment QR code">
       <div class="result-actions">
         <button class="btn btn-primary" id="btn-sell-one">Sell 1</button>
@@ -113,6 +114,8 @@
       <h2 id="result-card-title">New Item</h2>
       <div class="ocr-raw-label">Raw OCR text — select the unique identifier</div>
       <div class="ocr-raw selectable" id="ocr-raw-selectable"></div>
+      <div class="ocr-raw-label" id="other-fields-label" style="display:none;">Other fields found on the tag</div>
+      <div class="ocr-raw" id="other-fields-display" style="display:none;"></div>
       <div class="field">
         <label for="field-unique-id">Unique Identifier</label>
         <div class="unique-id-row">

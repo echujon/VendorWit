@@ -328,60 +328,88 @@ function showMatchCard(record, matchType = 'text', score = null) {
   matchCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-// Consignment-style tags print one labeled field per line (Ticket No:,
-// Name:, Item:, Brand:, Size:, Color:, Price $:). "Ticket No" is the
-// identifier used to match/re-scan an item, so this only fires — and wins
-// over the generic heuristic parser below — when it actually finds one.
-const TICKET_FIELD_PATTERNS = [
-  { key: 'uniqueId', label: /ticket\s*no\.?/i },
-  { key: 'name', label: /name/i },
-  { key: 'item', label: /item/i },
-  { key: 'brand', label: /brand/i },
-  { key: 'size', label: /size/i },
-  { key: 'color', label: /colou?r/i },
-  { key: 'price', label: /price\s*\$?/i }
+// Consignment-style tags print one labeled field per line. Field labels are
+// found generically ("<label>: <value>") rather than hardcoded per exact
+// wording, so unfamiliar tag stock still works — recognized labels map onto
+// known fields, and anything else is kept in otherFields instead of being
+// silently dropped. A label with nothing typed after it is normal (blank
+// tag fields), not a parse failure.
+//
+// "Ticket No" gets special-cased: it's the field used as the item's unique
+// ID, and on the tags this was built against it's followed by a period, not
+// a colon ("Ticket No. 12345") - the generic colon-based rule below would
+// never find it.
+const TICKET_NO_RE = /^ticket\s*(no|number|#)\.?\s*[:#]?\s*(.*)$/i;
+
+const KNOWN_FIELD_SYNONYMS = [
+  { key: 'name', label: /^name$/i },
+  { key: 'item', label: /^item$/i },
+  { key: 'brand', label: /^brand$/i },
+  { key: 'size', label: /^size$/i },
+  { key: 'color', label: /^colou?r$/i },
+  { key: 'price', label: /^price\s*\$?$/i }
 ];
+
+// $ has to be allowed in the label itself (e.g. "Price $:"), or a blank
+// field right before it would wrongly swallow it as its own value.
+const LABEL_LINE_RE = /^([A-Za-z][A-Za-z0-9 /#$]{0,30}?)\s*:\s*(.*)$/;
+
+function isTagLabelLine(line) {
+  return LABEL_LINE_RE.test(line) || TICKET_NO_RE.test(line);
+}
 
 function parseTicketTag(rawText = '') {
   const lines = (rawText || '').replace(/\r\n?/g, '\n').split('\n').map(l => l.trim()).filter(Boolean);
-  const fields = {};
+  const fields = { uniqueId: '', name: '', item: '', brand: '', size: '', color: '', price: '' };
+  const otherFields = {};
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    for (const { key, label } of TICKET_FIELD_PATTERNS) {
-      if (fields[key] !== undefined) continue;
-      const match = line.match(new RegExp(`^${label.source}\\s*[:#]?\\s*(.*)$`, 'i'));
-      if (!match) continue;
+    const nextLine = lines[i + 1];
 
-      let value = match[1].trim();
-      // Label printed with the value left blank on the same line — OCR
-      // sometimes puts a handwritten value on the next line instead.
-      const nextLine = lines[i + 1];
-      if (!value && nextLine && !TICKET_FIELD_PATTERNS.some(p => new RegExp(`^${p.label.source}\\b`, 'i').test(nextLine))) {
-        value = nextLine.trim();
-      }
-      fields[key] = value;
-      break;
+    const ticketMatch = !fields.uniqueId && line.match(TICKET_NO_RE);
+    if (ticketMatch) {
+      let value = ticketMatch[2].trim();
+      if (!value && nextLine && !isTagLabelLine(nextLine)) value = nextLine.trim();
+      fields.uniqueId = value.replace(/\s+/g, '');
+      continue;
+    }
+
+    const match = line.match(LABEL_LINE_RE);
+    if (!match) continue;
+
+    const label = match[1].trim();
+    let value = match[2].trim();
+    // Label printed with the value left blank on the same line — OCR
+    // sometimes puts a handwritten value on the next line instead. Only
+    // borrow it if that next line isn't itself another label.
+    if (!value && nextLine && !isTagLabelLine(nextLine)) {
+      value = nextLine.trim();
+    }
+
+    const known = KNOWN_FIELD_SYNONYMS.find(f => f.label.test(label));
+    if (known) {
+      fields[known.key] = known.key === 'price'
+        ? (value.match(/\d+(?:\.\d{1,2})?/) || [''])[0]
+        : value;
+    } else if (value) {
+      otherFields[label] = value;
     }
   }
 
   if (!fields.uniqueId) return null;
 
-  if (fields.price) {
-    const priceMatch = fields.price.match(/\d+(?:\.\d{1,2})?/);
-    fields.price = priceMatch ? priceMatch[0] : '';
-  }
-
   return {
-    uniqueId: fields.uniqueId.replace(/\s+/g, ''),
-    name: fields.name || '',
-    item: fields.item || '',
-    brand: fields.brand || '',
-    size: fields.size || '',
-    color: fields.color || '',
-    price: fields.price || '',
+    uniqueId: fields.uniqueId,
+    name: fields.name,
+    item: fields.item,
+    brand: fields.brand,
+    size: fields.size,
+    color: fields.color,
+    price: fields.price,
     quantity: '',
-    location: ''
+    location: '',
+    otherFields
   };
 }
 
