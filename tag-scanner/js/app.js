@@ -1260,6 +1260,7 @@ function closeReviewModal() {
   btnReviewTerminal.disabled = false;
   waitingForAssignment = false;
   activeCheckoutId = null;
+  activeDeviceId = null;
 }
 function openReviewModal() {
   const { requireTerminalOnly } = getSettings();
@@ -1280,7 +1281,7 @@ btnReviewModalClose.addEventListener('click', closeReviewModal);
 
 // Polls every 2s for up to 45 attempts (~90s ceiling) until the checkout is
 // COMPLETED (finish the sale), CANCELED (report it), or we give up gracefully.
-async function pollTerminalCheckout(checkoutId, attemptsLeft) {
+async function pollTerminalCheckout(checkoutId, attemptsLeft, deviceId) {
   if (attemptsLeft <= 0) {
     setTerminalStatus('Still waiting — check the Terminal or try again.');
     btnReviewTerminal.disabled = false;
@@ -1295,7 +1296,9 @@ async function pollTerminalCheckout(checkoutId, attemptsLeft) {
       clearTerminalStatus();
       hideCancelButton();
       activeCheckoutId = null;
+      activeDeviceId = null;
       btnReviewTerminal.disabled = false;
+      notifyTerminalFreedClientSide(deviceId);
       closeReviewModal();
       completeSale();
       return;
@@ -1304,17 +1307,20 @@ async function pollTerminalCheckout(checkoutId, attemptsLeft) {
       clearTerminalStatus();
       hideCancelButton();
       activeCheckoutId = null;
+      activeDeviceId = null;
       btnReviewTerminal.disabled = false;
+      notifyTerminalFreedClientSide(deviceId);
       toast('Terminal checkout canceled', 'error');
       return;
     }
 
     setTerminalStatus(`Waiting for card... (${data.status})`);
-    terminalPollTimer = setTimeout(() => pollTerminalCheckout(checkoutId, attemptsLeft - 1), 2000);
+    terminalPollTimer = setTimeout(() => pollTerminalCheckout(checkoutId, attemptsLeft - 1, deviceId), 2000);
   } catch (err) {
     clearTerminalStatus();
     hideCancelButton();
     activeCheckoutId = null;
+    activeDeviceId = null;
     btnReviewTerminal.disabled = false;
     toast('Terminal status error: ' + err.message, 'error');
   }
@@ -1329,6 +1335,21 @@ async function pollTerminalCheckout(checkoutId, attemptsLeft) {
 let queueSocket = null;
 let waitingForAssignment = false;
 let activeCheckoutId = null;
+let activeDeviceId = null;
+
+// Client-driven fallback for freeing a terminal: the server-side paths
+// (webhook, status-poll) assume Square echoes device_options.device_id back
+// in the checkout response/webhook payload - if that's ever wrong for some
+// checkout shape, they fail silently (fire-and-forget). The client already
+// knows which device it used, so tell the queue directly too, belt-and-braces.
+function notifyTerminalFreedClientSide(deviceId) {
+  if (!deviceId) return;
+  fetch('/api/queue/terminal-freed', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ deviceId })
+  }).catch(() => {});
+}
 
 function showCancelButton() { btnCancelTerminal.style.display = ''; }
 function hideCancelButton() { btnCancelTerminal.style.display = 'none'; }
@@ -1366,8 +1387,9 @@ async function sendCheckoutToDevice(deviceId) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Terminal checkout failed');
     activeCheckoutId = data.checkoutId;
+    activeDeviceId = deviceId;
     setTerminalStatus(`Waiting for card... (${data.status})`);
-    pollTerminalCheckout(data.checkoutId, 45);
+    pollTerminalCheckout(data.checkoutId, 45, deviceId);
   } catch (err) {
     clearTerminalStatus();
     hideCancelButton();
@@ -1423,9 +1445,12 @@ btnCancelTerminal.addEventListener('click', async () => {
       toast('Left the terminal queue', 'success');
     } else if (activeCheckoutId) {
       const checkoutId = activeCheckoutId;
+      const deviceId = activeDeviceId;
       activeCheckoutId = null;
+      activeDeviceId = null;
       stopTerminalPolling();
       await fetch(`/api/terminal-checkout/${checkoutId}/cancel`, { method: 'POST' });
+      notifyTerminalFreedClientSide(deviceId);
       toast('Terminal checkout canceled', 'success');
     }
   } catch (err) {

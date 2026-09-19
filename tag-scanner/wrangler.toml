@@ -9,6 +9,11 @@ pages_build_output_dir = "."
 # SQUARE_ACCESS_TOKEN (sensitive) stays a dashboard-managed Secret.
 [vars]
 SQUARE_ENVIRONMENT = "production"
+# Must match byte-for-byte what's registered as the Notification URL for the
+# webhook subscription in the Square Developer Dashboard (including
+# https:// and no trailing slash) - update this if the deployed domain
+# ever changes, and update the subscription in Square to match.
+SQUARE_WEBHOOK_NOTIFICATION_URL = "https://vendortools.pages.dev/api/webhooks/square"
 
 # TerminalQueue coordinates a shared pool of Square Terminals across
 # multiple simultaneous app instances. A Pages project can't self-host a
