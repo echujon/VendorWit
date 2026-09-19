@@ -2,6 +2,14 @@ name = "tag-scanner"
 compatibility_date = "2025-01-01"
 pages_build_output_dir = "."
 
+# Once wrangler.toml exists for a Pages project, Cloudflare treats it as the
+# source of truth for plain (non-secret) environment variables and locks
+# the dashboard's Environment Variables screen down to Secrets only - so
+# SQUARE_ENVIRONMENT (not sensitive) has to live here, while
+# SQUARE_ACCESS_TOKEN (sensitive) stays a dashboard-managed Secret.
+[vars]
+SQUARE_ENVIRONMENT = "production"
+
 # TerminalQueue coordinates a shared pool of Square Terminals across
 # multiple simultaneous app instances. A Pages project can't self-host a
 # Durable Object class - Cloudflare requires it to live in a separately
