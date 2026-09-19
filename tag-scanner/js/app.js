@@ -371,25 +371,44 @@ function isTagLabelLine(line) {
   return LABEL_LINE_RE.test(line) || TICKET_NO_RE.test(line);
 }
 
+// Blank tag fields are often printed as a fill-in line ("Item: _______"),
+// and OCR sometimes carries the underscores into the captured value instead
+// of dropping them - strip them (and the whitespace they leave behind) so
+// an unfilled field reads as empty rather than literal underscores.
+function stripBlankFill(value) {
+  return value.replace(/_+/g, '').trim();
+}
+
+// A lone label word with no colon at all ("Item" by itself, OCR having
+// dropped the ":") shouldn't be mistaken for floating ID text.
+const BARE_LABEL_WORDS = /^(ticket|no|number|name|item|brand|size|colou?r|price)$/i;
+
 function parseTicketTag(rawText = '') {
   const lines = (rawText || '').replace(/\r\n?/g, '\n').split('\n').map(l => l.trim()).filter(Boolean);
   const fields = { uniqueId: '', name: '', item: '', brand: '', size: '', color: '', price: '' };
   const otherFields = {};
+  const consumed = new Set();
 
   for (let i = 0; i < lines.length; i++) {
+    if (consumed.has(i)) continue;
     const line = lines[i];
     const nextLine = lines[i + 1];
 
     const ticketMatch = !fields.uniqueId && line.match(TICKET_NO_RE);
     if (ticketMatch) {
+      consumed.add(i);
       let value = ticketMatch[2].trim();
-      if (!value && nextLine && !isTagLabelLine(nextLine)) value = nextLine.trim();
-      fields.uniqueId = value.replace(/\s+/g, '');
+      if (!value && nextLine && !isTagLabelLine(nextLine)) { value = nextLine.trim(); consumed.add(i + 1); }
+      // The ID is used to match a re-scanned tag against a saved record, so
+      // keep it strictly alphanumeric - no punctuation/spaces/underscores
+      // that OCR might read inconsistently between scans of the same tag.
+      fields.uniqueId = value.replace(/[^A-Za-z0-9]/g, '');
       continue;
     }
 
     const match = line.match(LABEL_LINE_RE);
     if (!match) continue;
+    consumed.add(i);
 
     const label = match[1].trim();
     let value = match[2].trim();
@@ -398,7 +417,9 @@ function parseTicketTag(rawText = '') {
     // borrow it if that next line isn't itself another label.
     if (!value && nextLine && !isTagLabelLine(nextLine)) {
       value = nextLine.trim();
+      consumed.add(i + 1);
     }
+    value = stripBlankFill(value);
 
     const known = KNOWN_FIELD_SYNONYMS.find(f => f.label.test(label));
     if (known) {
@@ -407,6 +428,25 @@ function parseTicketTag(rawText = '') {
         : value;
     } else if (value) {
       otherFields[label] = value;
+    }
+  }
+
+  // "Floating" text: a short alphanumeric line with no label attached to it
+  // at all - not consumed as a label, a label's value, or a blank-fill
+  // placeholder. Some tags print the ticket number again on its own like
+  // this. Only ever used to fill in a MISSING Ticket No. - if one was
+  // already found via its label, the floating text is ignored either way
+  // (whether it agrees or disagrees), since the labeled value is trusted.
+  if (!fields.uniqueId) {
+    const floatingLine = lines.find((line, i) =>
+      !consumed.has(i) &&
+      !isTagLabelLine(line) &&
+      !BARE_LABEL_WORDS.test(line) &&
+      !/^_+$/.test(line) &&
+      /^[A-Za-z0-9](?:[A-Za-z0-9 -]{0,13}[A-Za-z0-9])?$/.test(line)
+    );
+    if (floatingLine) {
+      fields.uniqueId = floatingLine.replace(/[^A-Za-z0-9]/g, '');
     }
   }
 
@@ -1071,7 +1111,7 @@ function renderRecords() {
   recordsList.innerHTML = records.map(r => `
     <div class="record-item" data-id="${r.id}">
       <div class="record-info">
-        <div class="record-name">${esc(r.name || '(no name)')}</div>
+        <div class="record-name">${esc(r.item || r.name || '(no name)')}</div>
         <div class="record-meta">${esc(r.uniqueId || '')}${r.uniqueId ? ' · ' : ''}${r.quantity ? `Qty ${esc(r.quantity)} · ` : ''}${esc(r.location || '')}${r.location ? ' · ' : ''}${new Date(r.createdAt).toLocaleDateString()} ${r.sentToStripe ? '· In Stripe' : ''}</div>
       </div>
       <div class="record-price">$${esc(r.price || '—')}</div>
@@ -1148,7 +1188,10 @@ function addToCart(record) {
   if (existing) {
     existing.quantity += 1;
   } else {
-    cart.push({ id: record.id, name: record.name, price: record.price, quantity: 1 });
+    // Prefer the tag's "Item" field (e.g. "Poles") as the display name over
+    // "Name" (e.g. "JP", often a person's initials on these tags) - falls
+    // back to Name for records/tags that only ever populate that field.
+    cart.push({ id: record.id, name: record.item || record.name, price: record.price, quantity: 1 });
   }
   renderCart();
   toast('Added to cart', 'success');
