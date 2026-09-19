@@ -50,6 +50,7 @@
     <div class="settings-section">
       <h2>Square Point of Sale</h2>
       <p>Deep-links into the Square Point of Sale app on this phone to charge the item's price. Only works on iOS/Android with the Square POS app installed — get your Application ID at developer.squareup.com/apps.</p>
+      <p><strong>Use this for a solo vendor with just a phone and a Square Reader</strong> (the small card-swipe/tap dongle). A Reader has no Terminal API support of its own — it only works through Square's own POS app on the phone, which is exactly what this deep link opens.</p>
       <div class="settings-field">
         <label for="square-app-id">Square Application ID</label>
         <input type="text" id="square-app-id" placeholder="sq0idp-...">
@@ -59,6 +60,7 @@
     <div class="settings-section">
       <h2>Square Terminals</h2>
       <p>Register each paired Square Terminal here. When several people use the app at once, checkouts queue automatically and route to whichever terminal frees up next. Find each device id by pairing it (Square's device code flow) and calling Square's Devices API — it looks like "device:XXXXXXXXXXXXXXXX".</p>
+      <p><strong>Use this for an organization with dedicated Square Terminal or Square Register hardware</strong> (standalone devices with their own screen). A single registered terminal works fine too — with only one, every checkout goes straight to it with no waiting, so this is safe to use even for just one device.</p>
       <div id="terminal-list"></div>
       <div class="settings-field terminal-add-row" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:flex-end;">
         <div>

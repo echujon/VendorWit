@@ -150,7 +150,13 @@ export class TerminalQueue {
   async dequeue(request) {
     const body = await request.json().catch(() => ({}));
     const clientId = (body.clientId || '').trim();
-    const idx = this.queue.findIndex(e => e.clientId === clientId);
+    const queueId = (body.queueId || '').trim();
+    // A client can have several of its own sales queued at once - target
+    // the specific one by queueId when given, falling back to "first match
+    // for this client" only for older callers that don't know their queueId.
+    const idx = queueId
+      ? this.queue.findIndex(e => e.id === queueId)
+      : this.queue.findIndex(e => e.clientId === clientId);
     if (idx !== -1) {
       this.queue.splice(idx, 1);
       await this.persistQueue();

@@ -66,8 +66,7 @@ const btnReviewModalClose = document.getElementById('btn-review-modal-close');
 const reviewCartList = document.getElementById('review-cart-list');
 const reviewTotalDisplay = document.getElementById('review-total-display');
 const btnReviewTerminal = document.getElementById('btn-review-terminal');
-const terminalStatus = document.getElementById('terminal-status');
-const btnCancelTerminal = document.getElementById('btn-cancel-terminal');
+const pendingSalesBar = document.getElementById('pending-sales-bar');
 const btnReviewVenmo = document.getElementById('btn-review-venmo');
 const btnReviewSquare = document.getElementById('btn-review-square');
 const btnReviewComplete = document.getElementById('btn-review-complete');
@@ -1220,47 +1219,28 @@ btnAddToCart.addEventListener('click', () => {
   addToCart(matchedRecord);
 });
 
-function completeSale() {
-  cart.forEach(item => {
+// Shared by the "current cart" completion path and background terminal
+// sales alike, so a sale finishing in the background decrements inventory
+// correctly without touching whatever cart is being built right now.
+function decrementInventoryForItems(items) {
+  items.forEach(item => {
     const record = getRecords().find(r => r.id === item.id);
     if (!record) return;
     const currentQty = parseInt(record.quantity, 10) || 0;
     updateRecord(item.id, { quantity: String(Math.max(0, currentQty - item.quantity)) });
   });
+  renderRecords();
+}
+
+function completeSale() {
+  decrementInventoryForItems(cart);
   cart = [];
   renderCart();
-  renderRecords();
   toast('Sale complete!', 'success');
-}
-
-let terminalPollTimer = null;
-
-function stopTerminalPolling() {
-  if (terminalPollTimer) {
-    clearTimeout(terminalPollTimer);
-    terminalPollTimer = null;
-  }
-}
-
-function setTerminalStatus(msg) {
-  terminalStatus.textContent = msg;
-  terminalStatus.classList.remove('hidden');
-}
-
-function clearTerminalStatus() {
-  terminalStatus.classList.add('hidden');
-  terminalStatus.textContent = '';
 }
 
 function closeReviewModal() {
   reviewModal.classList.add('hidden');
-  stopTerminalPolling();
-  clearTerminalStatus();
-  hideCancelButton();
-  btnReviewTerminal.disabled = false;
-  waitingForAssignment = false;
-  activeCheckoutId = null;
-  activeDeviceId = null;
 }
 function openReviewModal() {
   const { requireTerminalOnly } = getSettings();
@@ -1279,63 +1259,20 @@ function closeVenmoModal() {
 reviewSaleBar.addEventListener('click', openReviewModal);
 btnReviewModalClose.addEventListener('click', closeReviewModal);
 
-// Polls every 2s for up to 45 attempts (~90s ceiling) until the checkout is
-// COMPLETED (finish the sale), CANCELED (report it), or we give up gracefully.
-async function pollTerminalCheckout(checkoutId, attemptsLeft, deviceId) {
-  if (attemptsLeft <= 0) {
-    setTerminalStatus('Still waiting — check the Terminal or try again.');
-    btnReviewTerminal.disabled = false;
-    return;
-  }
-  try {
-    const res = await fetch(`/api/terminal-checkout/${checkoutId}`);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Status check failed');
-
-    if (data.status === 'COMPLETED') {
-      clearTerminalStatus();
-      hideCancelButton();
-      activeCheckoutId = null;
-      activeDeviceId = null;
-      btnReviewTerminal.disabled = false;
-      notifyTerminalFreedClientSide(deviceId);
-      closeReviewModal();
-      completeSale();
-      return;
-    }
-    if (data.status === 'CANCELED') {
-      clearTerminalStatus();
-      hideCancelButton();
-      activeCheckoutId = null;
-      activeDeviceId = null;
-      btnReviewTerminal.disabled = false;
-      notifyTerminalFreedClientSide(deviceId);
-      toast('Terminal checkout canceled', 'error');
-      return;
-    }
-
-    setTerminalStatus(`Waiting for card... (${data.status})`);
-    terminalPollTimer = setTimeout(() => pollTerminalCheckout(checkoutId, attemptsLeft - 1, deviceId), 2000);
-  } catch (err) {
-    clearTerminalStatus();
-    hideCancelButton();
-    activeCheckoutId = null;
-    activeDeviceId = null;
-    btnReviewTerminal.disabled = false;
-    toast('Terminal status error: ' + err.message, 'error');
-  }
-}
-
 // --- Terminal queue ---
 // Multiple app instances can share fewer physical Square Terminals: a
 // checkout either gets a free terminal immediately, or waits in a shared
 // queue (held by the TerminalQueue Durable Object) until one frees up. The
 // WebSocket delivers that "assigned" push in real time; see
-// functions/durable-objects/terminal-queue.js for the server side.
+// terminal-queue-worker/worker.js for the server side.
+//
+// Each "Charge via Terminal" tap hands the sale off to a background
+// tracker (pendingSales) instead of blocking the Review Sale screen - the
+// cart is snapshotted at that moment and the screen clears immediately, so
+// you can keep scanning items for a different sale while this one waits.
 let queueSocket = null;
-let waitingForAssignment = false;
-let activeCheckoutId = null;
-let activeDeviceId = null;
+const pendingSales = new Map();   // saleId -> { items, total, status, queueId, deviceId, checkoutId, attemptsLeft, pollTimer }
+const queueIdToSaleId = new Map(); // queueId -> saleId, for routing the WS "assigned" push
 
 // Client-driven fallback for freeing a terminal: the server-side paths
 // (webhook, status-poll) assume Square echoes device_options.device_id back
@@ -1351,8 +1288,68 @@ function notifyTerminalFreedClientSide(deviceId) {
   }).catch(() => {});
 }
 
-function showCancelButton() { btnCancelTerminal.style.display = ''; }
-function hideCancelButton() { btnCancelTerminal.style.display = 'none'; }
+function saleStatusText(sale) {
+  switch (sale.status) {
+    case 'queued': return `Waiting in line for a terminal... (was position ${sale.position})`;
+    case 'sending': return 'Sending to Terminal...';
+    case 'waiting-for-card': return `Waiting for card... (${sale.cardStatus || 'PENDING'})`;
+    case 'stuck': return 'Still waiting — check the Terminal or try again.';
+    default: return '';
+  }
+}
+
+function renderPendingSales() {
+  if (!pendingSales.size) {
+    pendingSalesBar.classList.add('hidden');
+    pendingSalesBar.innerHTML = '';
+    return;
+  }
+  pendingSalesBar.classList.remove('hidden');
+  pendingSalesBar.innerHTML = Array.from(pendingSales.entries()).map(([saleId, sale]) => `
+    <div class="pending-sale-row" data-sale-id="${saleId}">
+      <div class="pending-sale-info">
+        <span class="pending-sale-total">$${sale.total.toFixed(2)}</span>
+        · <span class="pending-sale-status">${esc(saleStatusText(sale))}</span>
+      </div>
+      <button class="pending-sale-cancel" data-sale-id="${saleId}">Cancel</button>
+    </div>
+  `).join('');
+}
+
+function removePendingSale(saleId) {
+  const sale = pendingSales.get(saleId);
+  if (sale?.pollTimer) clearTimeout(sale.pollTimer);
+  if (sale?.queueId) queueIdToSaleId.delete(sale.queueId);
+  pendingSales.delete(saleId);
+  renderPendingSales();
+}
+
+pendingSalesBar.addEventListener('click', async (e) => {
+  const btn = e.target.closest('.pending-sale-cancel');
+  if (!btn) return;
+  const saleId = btn.dataset.saleId;
+  const sale = pendingSales.get(saleId);
+  if (!sale) return;
+  btn.disabled = true;
+  try {
+    if (sale.status === 'queued') {
+      await fetch('/api/queue/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId: getClientId(), queueId: sale.queueId })
+      });
+      toast('Left the terminal queue', 'success');
+    } else if (sale.checkoutId) {
+      await fetch(`/api/terminal-checkout/${sale.checkoutId}/cancel`, { method: 'POST' });
+      notifyTerminalFreedClientSide(sale.deviceId);
+      toast('Terminal checkout canceled', 'success');
+    }
+  } catch (err) {
+    toast('Cancel failed: ' + err.message, 'error');
+  } finally {
+    removePendingSale(saleId);
+  }
+});
 
 function connectQueueSocket() {
   if (queueSocket && (queueSocket.readyState === WebSocket.OPEN || queueSocket.readyState === WebSocket.CONNECTING)) return;
@@ -1361,9 +1358,11 @@ function connectQueueSocket() {
   queueSocket.addEventListener('message', (event) => {
     let msg;
     try { msg = JSON.parse(event.data); } catch { return; }
-    if (msg.type === 'assigned' && waitingForAssignment) {
-      waitingForAssignment = false;
-      sendCheckoutToDevice(msg.deviceId);
+    if (msg.type === 'assigned') {
+      const saleId = queueIdToSaleId.get(msg.queueId);
+      if (!saleId) return;
+      queueIdToSaleId.delete(msg.queueId);
+      sendCheckoutForSale(saleId, msg.deviceId);
     }
   });
   queueSocket.addEventListener('close', () => {
@@ -1372,94 +1371,109 @@ function connectQueueSocket() {
 }
 connectQueueSocket();
 
-async function sendCheckoutToDevice(deviceId) {
-  setTerminalStatus('Sending to Terminal...');
-  showCancelButton();
+async function sendCheckoutForSale(saleId, deviceId) {
+  const sale = pendingSales.get(saleId);
+  if (!sale) return;
+  sale.status = 'sending';
+  sale.queueId = null;
+  renderPendingSales();
   try {
     const res = await fetch('/api/terminal-checkout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        items: cart.map(item => ({ name: item.name, price: item.price, quantity: item.quantity })),
-        deviceId
-      })
+      body: JSON.stringify({ items: sale.items, deviceId })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Terminal checkout failed');
-    activeCheckoutId = data.checkoutId;
-    activeDeviceId = deviceId;
-    setTerminalStatus(`Waiting for card... (${data.status})`);
-    pollTerminalCheckout(data.checkoutId, 45, deviceId);
+    sale.checkoutId = data.checkoutId;
+    sale.deviceId = deviceId;
+    sale.status = 'waiting-for-card';
+    sale.cardStatus = data.status;
+    renderPendingSales();
+    pollPendingSale(saleId, 45);
   } catch (err) {
-    clearTerminalStatus();
-    hideCancelButton();
-    btnReviewTerminal.disabled = false;
     toast('Terminal error: ' + err.message, 'error');
+    removePendingSale(saleId);
+  }
+}
+
+// Polls every 2s for up to 45 attempts (~90s ceiling) until the checkout is
+// COMPLETED (finish the sale), CANCELED (report it), or we give up gracefully.
+async function pollPendingSale(saleId, attemptsLeft) {
+  const sale = pendingSales.get(saleId);
+  if (!sale) return;
+
+  if (attemptsLeft <= 0) {
+    sale.status = 'stuck';
+    renderPendingSales();
+    return;
+  }
+  try {
+    const res = await fetch(`/api/terminal-checkout/${sale.checkoutId}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Status check failed');
+
+    if (data.status === 'COMPLETED') {
+      notifyTerminalFreedClientSide(sale.deviceId);
+      decrementInventoryForItems(sale.items);
+      toast('Sale complete!', 'success');
+      removePendingSale(saleId);
+      return;
+    }
+    if (data.status === 'CANCELED') {
+      notifyTerminalFreedClientSide(sale.deviceId);
+      toast('Terminal checkout canceled', 'error');
+      removePendingSale(saleId);
+      return;
+    }
+
+    sale.cardStatus = data.status;
+    renderPendingSales();
+    sale.pollTimer = setTimeout(() => pollPendingSale(saleId, attemptsLeft - 1), 2000);
+  } catch (err) {
+    toast('Terminal status error: ' + err.message, 'error');
+    removePendingSale(saleId);
   }
 }
 
 btnReviewTerminal.addEventListener('click', async () => {
   if (!cart.length) return;
-  btnReviewTerminal.disabled = true;
-  waitingForAssignment = false;
-  activeCheckoutId = null;
-  setTerminalStatus('Finding a free terminal...');
-  showCancelButton();
+  const saleId = crypto.randomUUID();
+  const items = cart.map(item => ({ id: item.id, name: item.name, price: item.price, quantity: item.quantity }));
+  const total = items.reduce((sum, item) => sum + parseFloat(item.price) * item.quantity, 0);
+  pendingSales.set(saleId, { items, total, status: 'queued', position: null, queueId: null, deviceId: null, checkoutId: null, cardStatus: null, pollTimer: null });
+
+  // Hand off to the background tracker right away - clear the cart and
+  // close the modal so scanning the next sale can start immediately,
+  // rather than blocking on this one.
+  cart = [];
+  renderCart();
+  closeReviewModal();
+  renderPendingSales();
   connectQueueSocket();
+
   try {
     const res = await fetch('/api/queue/enqueue', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        clientId: getClientId(),
-        cart: cart.map(item => ({ name: item.name, price: item.price, quantity: item.quantity }))
-      })
+      body: JSON.stringify({ clientId: getClientId(), cart: items })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Could not reach the terminal queue');
 
     if (data.status === 'assigned') {
-      sendCheckoutToDevice(data.deviceId);
+      sendCheckoutForSale(saleId, data.deviceId);
     } else {
-      waitingForAssignment = true;
-      setTerminalStatus(`Waiting in line for a terminal... (position ${data.position})`);
+      const sale = pendingSales.get(saleId);
+      if (!sale) return; // canceled before the response came back
+      sale.queueId = data.queueId;
+      sale.position = data.position;
+      queueIdToSaleId.set(data.queueId, saleId);
+      renderPendingSales();
     }
   } catch (err) {
-    clearTerminalStatus();
-    hideCancelButton();
-    btnReviewTerminal.disabled = false;
     toast('Terminal queue error: ' + err.message, 'error');
-  }
-});
-
-btnCancelTerminal.addEventListener('click', async () => {
-  btnCancelTerminal.disabled = true;
-  try {
-    if (waitingForAssignment) {
-      waitingForAssignment = false;
-      await fetch('/api/queue/cancel', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clientId: getClientId() })
-      });
-      toast('Left the terminal queue', 'success');
-    } else if (activeCheckoutId) {
-      const checkoutId = activeCheckoutId;
-      const deviceId = activeDeviceId;
-      activeCheckoutId = null;
-      activeDeviceId = null;
-      stopTerminalPolling();
-      await fetch(`/api/terminal-checkout/${checkoutId}/cancel`, { method: 'POST' });
-      notifyTerminalFreedClientSide(deviceId);
-      toast('Terminal checkout canceled', 'success');
-    }
-  } catch (err) {
-    toast('Cancel failed: ' + err.message, 'error');
-  } finally {
-    clearTerminalStatus();
-    hideCancelButton();
-    btnReviewTerminal.disabled = false;
-    btnCancelTerminal.disabled = false;
+    removePendingSale(saleId);
   }
 });
 

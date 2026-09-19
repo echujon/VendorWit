@@ -462,6 +462,46 @@ main { flex: 1; padding: 1.25rem; padding-bottom: 5rem; display: flex; flex-dire
 }
 .review-sale-bar.hidden { display: none; }
 .review-sale-bar:active { transform: scale(0.98); }
+
+/* Sales waiting on/sent to a Terminal, tracked independently of whatever
+   cart is currently being built - lets you keep scanning other items while
+   one waits in the queue or for a card. */
+.pending-sales-bar {
+  position: fixed;
+  left: 1rem;
+  right: 1rem;
+  bottom: 5.5rem;
+  z-index: 149;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: 480px;
+  margin: 0 auto;
+}
+.pending-sales-bar.hidden { display: none; }
+
+.pending-sale-row {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 0.6rem 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.85rem;
+}
+.pending-sale-row .pending-sale-info { flex: 1; }
+.pending-sale-row .pending-sale-total { font-weight: 700; color: var(--brand-dark); }
+.pending-sale-row .pending-sale-status { color: var(--muted); }
+.pending-sale-row button {
+  background: var(--border);
+  border: none;
+  border-radius: 6px;
+  padding: 0.3rem 0.6rem;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
 #review-sale-summary { font-weight: 500; opacity: 0.9; }
 
 /* Settings page */

@@ -192,6 +192,11 @@
     Review Sale <span id="review-sale-summary"></span>
   </button>
 
+  <!-- Sales sent to a Terminal (queued or in progress), tracked separately
+       from the cart currently being built so scanning other items doesn't
+       lose track of them. -->
+  <div id="pending-sales-bar" class="pending-sales-bar hidden"></div>
+
   <!-- Review Sale modal -->
   <div id="review-modal" class="modal hidden">
     <div class="modal-content modal-content-tall">
@@ -199,8 +204,6 @@
       <h2>Review Sale</h2>
       <div id="review-cart-list"></div>
       <div id="review-total-display"></div>
-      <div id="terminal-status" class="hidden"></div>
-      <button class="btn btn-secondary" id="btn-cancel-terminal" style="display:none;">Cancel</button>
       <div class="modal-actions" style="flex-wrap:wrap;">
         <button class="btn btn-primary" id="btn-review-terminal">Charge via Terminal</button>
         <button class="btn btn-secondary" id="btn-review-venmo">Venmo QR</button>
