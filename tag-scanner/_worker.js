@@ -21,6 +21,7 @@ import * as queueStatus from './functions/api/queue/status.js';
 import * as queueCancel from './functions/api/queue/cancel.js';
 import * as queueClear from './functions/api/queue/clear.js';
 import * as queueTerminals from './functions/api/queue/terminals.js';
+import * as debugSquare from './functions/api/debug-square.js';
 
 export default {
   async fetch(request, env, ctx) {
@@ -47,6 +48,10 @@ export default {
 
     if (pathname === '/api/webhooks/square' && method === 'POST') {
       return webhookSquare.onRequestPost(context);
+    }
+
+    if (pathname === '/api/debug-square' && method === 'GET') {
+      return debugSquare.onRequestGet(context);
     }
 
     if (pathname === '/api/queue/connect' && method === 'GET') {
