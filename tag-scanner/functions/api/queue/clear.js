@@ -5,10 +5,13 @@
 // to target with /api/queue/cancel.
 
 import { forwardToQueue } from '../../_shared/queue.js';
+import { resolveLocation } from '../../_shared/location.js';
 
 export async function onRequestPost(context) {
-  const { env } = context;
+  const { request, env } = context;
   if (!env.TERMINAL_QUEUE) return new Response(JSON.stringify({ error: 'Server not configured' }), { status: 500 });
-  const res = await forwardToQueue(env, context.request, '/clear-queue');
+  const loc = await resolveLocation(request, env);
+  if (loc.error) return new Response(JSON.stringify({ error: loc.error }), { status: loc.status });
+  const res = await forwardToQueue(env, request, '/clear-queue', loc.locationId);
   return new Response(res.body, res);
 }

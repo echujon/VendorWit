@@ -6,11 +6,14 @@
 // /api/queue/connect) or falls back to polling /api/queue/status.
 
 import { forwardToQueue } from '../../_shared/queue.js';
+import { resolveLocation } from '../../_shared/location.js';
 
 export async function onRequestPost(context) {
   const { request, env } = context;
   if (!env.TERMINAL_QUEUE) return json({ error: 'Server not configured' }, 500);
-  const res = await forwardToQueue(env, request, '/enqueue');
+  const loc = await resolveLocation(request, env);
+  if (loc.error) return json({ error: loc.error }, loc.status);
+  const res = await forwardToQueue(env, request, '/enqueue', loc.locationId);
   return new Response(res.body, res);
 }
 

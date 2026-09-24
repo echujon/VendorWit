@@ -1,4 +1,4 @@
-import { getRecords, saveRecord, updateRecord, deleteRecord, exportCSV, getSettings, getClientId, findByUniqueId, findByVisualMatch } from './storage.js';
+import { getRecords, getCachedRecords, saveRecord, updateRecord, deleteRecord, exportCSV, getSettings, getClientId, getLocationCode, findByUniqueId, findByVisualMatch } from './storage.js';
 import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0/+esm';
 import QRCode from 'https://cdn.jsdelivr.net/npm/qrcode@1.5.4/+esm';
 
@@ -238,9 +238,9 @@ async function processImage(blob) {
 
   const parsedScan = parseTicketTag(rawText) || parseScannedText(rawText);
   const textMatch = parsedScan.uniqueId
-    ? findByUniqueId(parsedScan.uniqueId)
+    ? await findByUniqueId(parsedScan.uniqueId)
     : rawText.trim()
-      ? findByUniqueId(rawText)
+      ? await findByUniqueId(rawText)
       : null;
 
   if (textMatch) {
@@ -263,8 +263,8 @@ async function processImage(blob) {
   showStatus('Checking appearance...');
   const embeddings = await embedImage(blob);
   let visualMatch = null;
-  if (embeddings.gemini) visualMatch = findByVisualMatch(embeddings.gemini, 'gemini');
-  if (!visualMatch && embeddings.clip) visualMatch = findByVisualMatch(embeddings.clip, 'clip');
+  if (embeddings.gemini) visualMatch = await findByVisualMatch(embeddings.gemini, 'gemini');
+  if (!visualMatch && embeddings.clip) visualMatch = await findByVisualMatch(embeddings.clip, 'clip');
 
   hideStatus();
 
@@ -941,13 +941,13 @@ btnEditMatch.addEventListener('click', () => {
   showNewItemForm(lastRawText, matchedRecord);
 });
 
-function sellOne() {
+async function sellOne() {
   if (!matchedRecord) return;
   const newQty = Math.max(0, (parseInt(matchedRecord.quantity, 10) || 0) - 1);
-  updateRecord(matchedRecord.id, { quantity: String(newQty) });
+  await updateRecord(matchedRecord.id, { quantity: String(newQty) });
   matchedRecord = { ...matchedRecord, quantity: String(newQty) };
   document.getElementById('match-quantity').textContent = String(newQty);
-  renderRecords();
+  await renderRecords();
   toast(`Sold — ${newQty} left`, 'success');
 
   const { squareAppId } = getSettings();
@@ -1036,7 +1036,7 @@ btnSave.addEventListener('click', async () => {
   const data = await attachVisualData(collectFormData());
   if (!data.name && !data.price) { toast('Add a name or price first', 'error'); return; }
 
-  const editId = resultCard.dataset.editId ? Number(resultCard.dataset.editId) : null;
+  const editId = resultCard.dataset.editId || null;
   if (!editId) {
     const isCorrect = askIfRecordIsCorrect(data);
     if (!isCorrect) {
@@ -1046,12 +1046,12 @@ btnSave.addEventListener('click', async () => {
   }
 
   if (editId) {
-    updateRecord(editId, data);
+    await updateRecord(editId, data);
   } else {
-    saveRecord(data);
+    await saveRecord(data);
   }
   resetScanArea();
-  renderRecords();
+  await renderRecords();
   toast('Saved!', 'success');
 });
 
@@ -1062,15 +1062,15 @@ btnStripe.addEventListener('click', async () => {
   showStatus('Pushing to Stripe...');
   try {
     const ids = await pushToStripe(data);
-    const editId = resultCard.dataset.editId ? Number(resultCard.dataset.editId) : null;
+    const editId = resultCard.dataset.editId || null;
     const stripeFields = { ...data, stripeId: ids.productId, priceId: ids.priceId, sentToStripe: true };
     if (editId) {
-      updateRecord(editId, stripeFields);
+      await updateRecord(editId, stripeFields);
     } else {
-      saveRecord(stripeFields);
+      await saveRecord(stripeFields);
     }
     resetScanArea();
-    renderRecords();
+    await renderRecords();
     hideStatus();
     toast('Saved + pushed to Stripe!', 'success');
   } catch (err) {
@@ -1102,8 +1102,8 @@ function resetScanArea() {
 }
 
 // --- Records ---
-function renderRecords() {
-  const records = getRecords();
+async function renderRecords() {
+  const records = await getRecords();
   if (!records.length) {
     recordsList.innerHTML = '<div class="empty-state">No records yet — scan a tag to get started.</div>';
     return;
@@ -1124,7 +1124,7 @@ function renderRecords() {
 }
 
 function viewRecord(id) {
-  const record = getRecords().find(r => r.id === id);
+  const record = getCachedRecords().find(r => r.id === id);
   if (!record) return;
   hideAllResultCards();
   lastRawText = '';
@@ -1135,24 +1135,24 @@ recordsList.addEventListener('click', async e => {
   const btn = e.target.closest('.record-btn');
   const item = e.target.closest('.record-item');
   if (!item) return;
-  const id = Number(item.dataset.id);
+  const id = item.dataset.id;
 
   if (btn?.classList.contains('delete')) {
-    deleteRecord(id);
-    renderRecords();
+    await deleteRecord(id);
+    await renderRecords();
     return;
   }
 
   if (btn?.classList.contains('push-stripe')) {
-    const record = getRecords().find(r => r.id === id);
+    const record = getCachedRecords().find(r => r.id === id);
     if (!record) return;
     btn.disabled = true;
     btn.textContent = '...';
     showStatus('Pushing to Stripe...');
     try {
       const ids = await pushToStripe(record);
-      updateRecord(id, { stripeId: ids.productId, priceId: ids.priceId, sentToStripe: true });
-      renderRecords();
+      await updateRecord(id, { stripeId: ids.productId, priceId: ids.priceId, sentToStripe: true });
+      await renderRecords();
       hideStatus();
       toast('Pushed to Stripe!', 'success');
     } catch (err) {
@@ -1171,7 +1171,7 @@ recordsList.addEventListener('click', async e => {
 
 // --- Cart (multi-item sale, no inventory change until Complete Sale) ---
 function cartAvailableFor(id) {
-  const record = getRecords().find(r => r.id === id);
+  const record = getCachedRecords().find(r => r.id === id);
   if (!record || record.quantity === undefined || record.quantity === '') return null;
   return parseInt(record.quantity, 10);
 }
@@ -1240,7 +1240,7 @@ function renderCart() {
 reviewCartList.addEventListener('click', e => {
   const btn = e.target.closest('.record-btn');
   if (!btn) return;
-  const id = Number(btn.dataset.id);
+  const id = btn.dataset.id;
   const item = cart.find(i => i.id === id);
   if (!item) return;
 
@@ -1265,18 +1265,18 @@ btnAddToCart.addEventListener('click', () => {
 // Shared by the "current cart" completion path and background terminal
 // sales alike, so a sale finishing in the background decrements inventory
 // correctly without touching whatever cart is being built right now.
-function decrementInventoryForItems(items) {
-  items.forEach(item => {
-    const record = getRecords().find(r => r.id === item.id);
-    if (!record) return;
+async function decrementInventoryForItems(items) {
+  for (const item of items) {
+    const record = getCachedRecords().find(r => r.id === item.id);
+    if (!record) continue;
     const currentQty = parseInt(record.quantity, 10) || 0;
-    updateRecord(item.id, { quantity: String(Math.max(0, currentQty - item.quantity)) });
-  });
-  renderRecords();
+    await updateRecord(item.id, { quantity: String(Math.max(0, currentQty - item.quantity)) });
+  }
+  await renderRecords();
 }
 
-function completeSale() {
-  decrementInventoryForItems(cart);
+async function completeSale() {
+  await decrementInventoryForItems(cart);
   cart = [];
   renderCart();
   toast('Sale complete!', 'success');
@@ -1317,6 +1317,15 @@ let queueSocket = null;
 const pendingSales = new Map();   // saleId -> { items, total, status, queueId, deviceId, checkoutId, attemptsLeft, pollTimer }
 const queueIdToSaleId = new Map(); // queueId -> saleId, for routing the WS "assigned" push
 
+// Every queue/terminal-checkout request needs to say which location it's
+// for - X-Location-Code as a header (or ?locationCode= for the WebSocket,
+// which can't set custom headers), resolved server-side in
+// functions/_shared/location.js. "location" isn't used as the variable
+// name here to avoid colliding with the browser's global window.location.
+function locationHeaders(extra = {}) {
+  return { 'X-Location-Code': getLocationCode(), ...extra };
+}
+
 // Client-driven fallback for freeing a terminal: the server-side paths
 // (webhook, status-poll) assume Square echoes device_options.device_id back
 // in the checkout response/webhook payload - if that's ever wrong for some
@@ -1326,7 +1335,7 @@ function notifyTerminalFreedClientSide(deviceId) {
   if (!deviceId) return;
   fetch('/api/queue/terminal-freed', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: locationHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ deviceId })
   }).catch(() => {});
 }
@@ -1378,12 +1387,12 @@ pendingSalesBar.addEventListener('click', async (e) => {
     if (sale.status === 'queued') {
       await fetch('/api/queue/cancel', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: locationHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ clientId: getClientId(), queueId: sale.queueId })
       });
       toast('Left the terminal queue', 'success');
     } else if (sale.checkoutId) {
-      await fetch(`/api/terminal-checkout/${sale.checkoutId}/cancel`, { method: 'POST' });
+      await fetch(`/api/terminal-checkout/${sale.checkoutId}/cancel`, { method: 'POST', headers: locationHeaders() });
       notifyTerminalFreedClientSide(sale.deviceId);
       toast('Terminal checkout canceled', 'success');
     }
@@ -1397,7 +1406,7 @@ pendingSalesBar.addEventListener('click', async (e) => {
 function connectQueueSocket() {
   if (queueSocket && (queueSocket.readyState === WebSocket.OPEN || queueSocket.readyState === WebSocket.CONNECTING)) return;
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  queueSocket = new WebSocket(`${protocol}//${location.host}/api/queue/connect?clientId=${getClientId()}`);
+  queueSocket = new WebSocket(`${protocol}//${location.host}/api/queue/connect?clientId=${getClientId()}&locationCode=${encodeURIComponent(getLocationCode())}`);
   queueSocket.addEventListener('message', (event) => {
     let msg;
     try { msg = JSON.parse(event.data); } catch { return; }
@@ -1423,7 +1432,7 @@ async function sendCheckoutForSale(saleId, deviceId) {
   try {
     const res = await fetch('/api/terminal-checkout', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: locationHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ items: sale.items, deviceId })
     });
     const data = await res.json();
@@ -1452,13 +1461,13 @@ async function pollPendingSale(saleId, attemptsLeft) {
     return;
   }
   try {
-    const res = await fetch(`/api/terminal-checkout/${sale.checkoutId}`);
+    const res = await fetch(`/api/terminal-checkout/${sale.checkoutId}`, { headers: locationHeaders() });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Status check failed');
 
     if (data.status === 'COMPLETED') {
       notifyTerminalFreedClientSide(sale.deviceId);
-      decrementInventoryForItems(sale.items);
+      await decrementInventoryForItems(sale.items);
       toast('Sale complete!', 'success');
       removePendingSale(saleId);
       return;
@@ -1498,7 +1507,7 @@ btnReviewTerminal.addEventListener('click', async () => {
   try {
     const res = await fetch('/api/queue/enqueue', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: locationHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ clientId: getClientId(), cart: items })
     });
     const data = await res.json();
@@ -1582,7 +1591,7 @@ btnCamera.addEventListener('click', () => {
 
 btnCapture.addEventListener('click', captureFrame);
 btnUpload.addEventListener('click', () => fileInput.click());
-btnExport.addEventListener('click', () => { exportCSV(); toast('CSV downloaded', 'success'); });
+btnExport.addEventListener('click', async () => { exportCSV(await getRecords()); toast('CSV downloaded', 'success'); });
 
 // --- Test data seeding (local dev only) ---
 const isLocalEnv = ['localhost', '127.0.0.1'].includes(window.location.hostname);
@@ -1590,14 +1599,14 @@ if (isLocalEnv) {
   btnSeedTest.style.display = '';
 }
 
-btnSeedTest.addEventListener('click', () => {
+btnSeedTest.addEventListener('click', async () => {
   const sampleRecords = [
     { uniqueId: '', name: 'Kitty Button', price: '8.00', quantity: '5', location: 'Bin A' },
     { uniqueId: '', name: 'Star Button', price: '6.50', quantity: '3', location: 'Bin A' },
     { uniqueId: '', name: 'Floral Button', price: '10.00', quantity: '2', location: 'Bin B' }
   ];
-  sampleRecords.forEach(saveRecord);
-  renderRecords();
+  for (const record of sampleRecords) await saveRecord(record);
+  await renderRecords();
   toast('Seeded 3 test records', 'success');
 });
 

@@ -23,6 +23,9 @@ import * as queueClear from './functions/api/queue/clear.js';
 import * as queueTerminalFreed from './functions/api/queue/terminal-freed.js';
 import * as queueTerminals from './functions/api/queue/terminals.js';
 import * as debugSquare from './functions/api/debug-square.js';
+import * as orgs from './functions/api/orgs.js';
+import * as items from './functions/api/items.js';
+import * as itemsById from './functions/api/items/[id].js';
 
 export default {
   async fetch(request, env, ctx) {
@@ -77,6 +80,20 @@ export default {
       if (method === 'GET') return queueTerminals.onRequestGet(context);
       if (method === 'POST') return queueTerminals.onRequestPost(context);
       if (method === 'DELETE') return queueTerminals.onRequestDelete(context);
+    }
+
+    if (pathname === '/api/orgs' && method === 'POST') {
+      return orgs.onRequestPost(context);
+    }
+    if (pathname === '/api/items') {
+      if (method === 'GET') return items.onRequestGet(context);
+      if (method === 'POST') return items.onRequestPost(context);
+    }
+    const itemIdMatch = pathname.match(/^\/api\/items\/([^/]+)$/);
+    if (itemIdMatch) {
+      context.params = { id: itemIdMatch[1] };
+      if (method === 'PATCH') return itemsById.onRequestPatch(context);
+      if (method === 'DELETE') return itemsById.onRequestDelete(context);
     }
 
     // Not an API route - serve the static site (index.html, css/, js/,

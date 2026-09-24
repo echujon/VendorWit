@@ -1,6 +1,6 @@
-const RECORDS_KEY = 'tag_scanner_records';
 const SETTINGS_KEY = 'tag_scanner_settings';
 const CLIENT_ID_KEY = 'tag_scanner_client_id';
+const LOCATION_CODE_KEY = 'tag_scanner_location_code';
 
 // Stable per-device id used to route terminal-queue assignments back to
 // whichever app instance requested a checkout.
@@ -13,63 +13,73 @@ export function getClientId() {
   return id;
 }
 
-export function getRecords() {
-  let records;
-  try {
-    records = JSON.parse(localStorage.getItem(RECORDS_KEY) || '[]');
-  } catch {
-    return [];
-  }
-
-  // Repair any duplicate ids (e.g. from records saved in the same millisecond
-  // before this was guarded against in saveRecord).
-  const seenIds = new Set();
-  let repaired = false;
-  for (const record of records) {
-    while (seenIds.has(record.id)) {
-      record.id++;
-      repaired = true;
-    }
-    seenIds.add(record.id);
-  }
-  if (repaired) {
-    localStorage.setItem(RECORDS_KEY, JSON.stringify(records));
-  }
-
-  return records;
+// Which location this device is bound to - entered once in Settings after
+// creating/joining an organization's location (see functions/api/orgs.js).
+// Sent as X-Location-Code on every inventory/terminal-queue request so the
+// server knows whose shared data to touch (functions/_shared/location.js).
+export function getLocationCode() {
+  return localStorage.getItem(LOCATION_CODE_KEY) || '';
 }
 
-export function saveRecord(record) {
-  const records = getRecords();
-  let id = Date.now();
-  while (records.some(r => r.id === id)) id++;
-  records.unshift({ ...record, id, createdAt: new Date().toISOString() });
-  localStorage.setItem(RECORDS_KEY, JSON.stringify(records));
-  return records;
+export function setLocationCode(code) {
+  localStorage.setItem(LOCATION_CODE_KEY, (code || '').trim());
 }
 
-export function updateRecord(id, updates) {
-  const records = getRecords();
-  const idx = records.findIndex(r => r.id === id);
-  if (idx !== -1) {
-    records[idx] = { ...records[idx], ...updates };
-    localStorage.setItem(RECORDS_KEY, JSON.stringify(records));
-  }
-  return records;
+function locationHeaders() {
+  return { 'X-Location-Code': getLocationCode(), 'Content-Type': 'application/json' };
 }
 
-export function deleteRecord(id) {
-  const records = getRecords().filter(r => r.id !== id);
-  localStorage.setItem(RECORDS_KEY, JSON.stringify(records));
-  return records;
+async function apiFetch(path, options = {}) {
+  const res = await fetch(path, {
+    ...options,
+    headers: { ...locationHeaders(), ...(options.headers || {}) }
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Request to ${path} failed`);
+  return data;
 }
 
-export function findByUniqueId(ocrText) {
+// Inventory now lives server-side in D1, shared by everyone bound to the
+// same location, instead of per-browser localStorage - see
+// tag-scanner/functions/api/items.js. A small in-memory cache avoids
+// re-fetching on every render; callers that mutate data get the fresh list
+// back directly and should re-render from that rather than re-fetching.
+let recordsCache = [];
+
+export async function getRecords() {
+  recordsCache = await apiFetch('/api/items');
+  return recordsCache;
+}
+
+export function getCachedRecords() {
+  return recordsCache;
+}
+
+export async function saveRecord(record) {
+  const saved = await apiFetch('/api/items', { method: 'POST', body: JSON.stringify(record) });
+  recordsCache = [saved, ...recordsCache];
+  return recordsCache;
+}
+
+export async function updateRecord(id, updates) {
+  const updated = await apiFetch(`/api/items/${id}`, { method: 'PATCH', body: JSON.stringify(updates) });
+  recordsCache = recordsCache.map(r => (r.id === id ? updated : r));
+  return recordsCache;
+}
+
+export async function deleteRecord(id) {
+  await apiFetch(`/api/items/${id}`, { method: 'DELETE' });
+  recordsCache = recordsCache.filter(r => r.id !== id);
+  return recordsCache;
+}
+
+export async function findByUniqueId(ocrText) {
   const text = (ocrText || '').toString().trim();
   if (!text) return null;
 
   const normalized = text.toLowerCase();
-  return getRecords().find(r => {
+  const records = await getRecords();
+  return records.find(r => {
     const unique = (r.uniqueId || '').toString().trim();
     if (!unique) return false;
     return normalized.includes(unique.toLowerCase()) || normalized === unique.toLowerCase();
@@ -92,10 +102,11 @@ export function cosineSimilarity(a, b) {
 
 // source is 'gemini' or 'clip' — embeddings from different models live in
 // different vector spaces, so matching only ever compares same-source vectors.
-export function findByVisualMatch(queryEmbedding, source) {
+export async function findByVisualMatch(queryEmbedding, source) {
   const field = source === 'gemini' ? 'embeddingGemini' : 'embeddingClip';
+  const records = await getRecords();
   let best = null;
-  for (const record of getRecords()) {
+  for (const record of records) {
     const candidate = record[field];
     if (!candidate || !candidate.length) continue;
     const score = cosineSimilarity(queryEmbedding, candidate);
@@ -105,8 +116,7 @@ export function findByVisualMatch(queryEmbedding, source) {
   return null;
 }
 
-export function exportCSV() {
-  const records = getRecords();
+export function exportCSV(records) {
   const rows = [['Unique ID', 'Name', 'Item', 'Brand', 'Size', 'Color', 'Price', 'Quantity', 'Location', 'Other Fields', 'Stripe ID', 'Date']];
   records.forEach(r => {
     const otherFields = Object.entries(r.otherFields || {}).map(([k, v]) => `${k}: ${v}`).join('; ');

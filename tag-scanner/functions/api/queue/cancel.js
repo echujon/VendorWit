@@ -6,10 +6,13 @@
 // POST /api/terminal-checkout/:id/cancel instead.
 
 import { forwardToQueue } from '../../_shared/queue.js';
+import { resolveLocation } from '../../_shared/location.js';
 
 export async function onRequestPost(context) {
   const { request, env } = context;
   if (!env.TERMINAL_QUEUE) return new Response(JSON.stringify({ error: 'Server not configured' }), { status: 500 });
-  const res = await forwardToQueue(env, request, '/dequeue');
+  const loc = await resolveLocation(request, env);
+  if (loc.error) return new Response(JSON.stringify({ error: loc.error }), { status: loc.status });
+  const res = await forwardToQueue(env, request, '/dequeue', loc.locationId);
   return new Response(res.body, res);
 }

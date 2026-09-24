@@ -26,3 +26,20 @@ SQUARE_WEBHOOK_NOTIFICATION_URL = "https://vendortools.pages.dev/api/webhooks/sq
 name = "TERMINAL_QUEUE"
 class_name = "TerminalQueue"
 script_name = "vendorwit-terminal-queue"
+# Lets `wrangler pages dev` talk to the real deployed Durable Object instead
+# of trying (and failing) to simulate an external Worker locally - D1 above
+# still runs fully local. Remove this before a real deploy if you'd rather
+# it resolve normally there (it should be a no-op in production either way).
+experimental_remote = true
+
+# Shared inventory, scoped per location (organizations -> locations -> items).
+# One-time setup: `wrangler d1 create vendorwit-inventory` from this
+# directory, then paste the database_id it prints below. Apply the schema
+# with `wrangler d1 migrations apply vendorwit-inventory --remote`
+# (drop --remote for local dev). Unlike the Durable Object above, D1
+# bindings work directly in a Pages project - no separate Worker needed.
+[[d1_databases]]
+binding = "DB"
+database_name = "vendorwit-inventory"
+database_id = "fca4ab12-67d4-49ae-ad33-44e1166af2f0"
+migrations_dir = "migrations"

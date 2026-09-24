@@ -58,6 +58,36 @@
     </div>
 
     <div class="settings-section">
+      <h2>Location</h2>
+      <p>Binds this device to a shared location — everyone bound to the same location sees the same inventory and Square Terminal pool. Create a new organization/location once, or join an existing one with its code.</p>
+      <div id="location-status" style="font-weight:600;margin-bottom:0.75rem;"></div>
+      <div id="location-code-display" style="display:none;background:var(--surface,#fff);border:1px solid var(--border,#e8d5c0);border-radius:8px;padding:0.75rem 1rem;margin-bottom:1rem;align-items:center;gap:0.75rem;">
+        <span style="font-size:0.75rem;color:var(--muted,#8a7060);text-transform:uppercase;letter-spacing:0.05em;">Share this code with staff to join this location</span>
+        <div style="display:flex;align-items:center;gap:0.75rem;margin-top:0.25rem;">
+          <span id="location-code-value" style="font-size:1.5rem;font-weight:700;letter-spacing:0.1em;font-family:monospace;"></span>
+          <button class="btn btn-outline" id="btn-copy-location-code" type="button" style="font-size:0.8rem;padding:0.3rem 0.6rem;">Copy</button>
+        </div>
+      </div>
+      <div class="settings-field">
+        <label for="location-join-code">Location Code</label>
+        <input type="text" id="location-join-code" placeholder="e.g. AB12CD34" style="text-transform:uppercase;">
+      </div>
+      <button class="btn btn-outline" id="btn-join-location" type="button">Join Location</button>
+      <details style="margin-top:1rem;">
+        <summary style="cursor:pointer;color:var(--muted,#8a7060);font-size:0.9rem;">Create a new organization instead</summary>
+        <div class="settings-field" style="margin-top:0.75rem;">
+          <label for="new-org-name">Organization Name</label>
+          <input type="text" id="new-org-name" placeholder="e.g. Ariel's Doodles">
+        </div>
+        <div class="settings-field">
+          <label for="new-org-location-name">Location Name</label>
+          <input type="text" id="new-org-location-name" placeholder="e.g. Main Booth">
+        </div>
+        <button class="btn btn-outline" id="btn-create-org" type="button">Create Organization</button>
+      </details>
+    </div>
+
+    <div class="settings-section">
       <h2>Square Terminals</h2>
       <p>Register each paired Square Terminal here. When several people use the app at once, checkouts queue automatically and route to whichever terminal frees up next. Find each device id by pairing it (Square's device code flow) and calling Square's Devices API — it looks like "device:XXXXXXXXXXXXXXXX".</p>
       <p><strong>Use this for an organization with dedicated Square Terminal or Square Register hardware</strong> (standalone devices with their own screen). A single registered terminal works fine too — with only one, every checkout goes straight to it with no waiting, so this is safe to use even for just one device.</p>
@@ -96,7 +126,73 @@
   </div>
 
   <script type="module">
-    import { getSettings, saveSettings } from '/js/storage.js';
+    import { getSettings, saveSettings, getLocationCode, setLocationCode } from '/js/storage.js';
+
+    function locationHeaders(extra = {}) {
+      return { 'X-Location-Code': getLocationCode(), ...extra };
+    }
+
+    function renderLocationStatus() {
+      const status = document.getElementById('location-status');
+      const codeDisplay = document.getElementById('location-code-display');
+      const codeValue = document.getElementById('location-code-value');
+      const code = getLocationCode();
+
+      status.textContent = code ? 'Bound to a location.' : 'Not bound to a location yet — join one or create an organization below.';
+      document.getElementById('location-join-code').value = code;
+
+      if (code) {
+        codeValue.textContent = code;
+        codeDisplay.style.display = 'flex';
+        codeDisplay.style.flexDirection = 'column';
+      } else {
+        codeDisplay.style.display = 'none';
+      }
+    }
+    renderLocationStatus();
+
+    document.getElementById('btn-copy-location-code').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-copy-location-code');
+      try {
+        await navigator.clipboard.writeText(getLocationCode());
+        btn.textContent = 'Copied!';
+        setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+      } catch {
+        alert('Could not copy automatically — the code is shown above, copy it manually.');
+      }
+    });
+
+    document.getElementById('btn-join-location').addEventListener('click', () => {
+      const code = document.getElementById('location-join-code').value.trim();
+      if (!code) return;
+      setLocationCode(code);
+      renderLocationStatus();
+      loadTerminals();
+    });
+
+    document.getElementById('btn-create-org').addEventListener('click', async () => {
+      const organizationName = document.getElementById('new-org-name').value.trim();
+      const locationName = document.getElementById('new-org-location-name').value.trim();
+      if (!organizationName || !locationName) return;
+      const btn = document.getElementById('btn-create-org');
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/orgs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ organizationName, locationName })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to create organization');
+        setLocationCode(data.joinCode);
+        renderLocationStatus();
+        loadTerminals();
+      } catch (err) {
+        alert(err.message);
+      } finally {
+        btn.disabled = false;
+      }
+    });
 
     const settings = getSettings();
     document.getElementById('anthropic-key').value = settings.anthropicKey || '';
@@ -128,7 +224,7 @@
     async function loadTerminals() {
       terminalList.textContent = 'Loading...';
       try {
-        const res = await fetch('/api/queue/terminals');
+        const res = await fetch('/api/queue/terminals', { headers: locationHeaders() });
         const terminals = await res.json();
         if (!res.ok) throw new Error(terminals.error || 'Failed to load terminals');
         renderTerminals(terminals);
@@ -166,12 +262,12 @@
             // preserves whatever status it already had.
             await fetch('/api/queue/terminals', {
               method: 'DELETE',
-              headers: { 'Content-Type': 'application/json' },
+              headers: locationHeaders({ 'Content-Type': 'application/json' }),
               body: JSON.stringify({ deviceId: t.deviceId })
             });
             await fetch('/api/queue/terminals', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: locationHeaders({ 'Content-Type': 'application/json' }),
               body: JSON.stringify({ name: t.name, deviceId: t.deviceId })
             });
             loadTerminals();
@@ -188,7 +284,7 @@
           removeBtn.disabled = true;
           await fetch('/api/queue/terminals', {
             method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
+            headers: locationHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ deviceId: t.deviceId })
           });
           loadTerminals();
@@ -213,7 +309,7 @@
       try {
         const res = await fetch('/api/queue/terminals', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: locationHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ name, deviceId })
         });
         if (!res.ok) {
@@ -235,7 +331,7 @@
       const btn = document.getElementById('btn-clear-queue');
       btn.disabled = true;
       try {
-        const res = await fetch('/api/queue/clear', { method: 'POST' });
+        const res = await fetch('/api/queue/clear', { method: 'POST', headers: locationHeaders() });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to clear queue');
         alert(`Cleared ${data.cleared} waiting request(s).`);

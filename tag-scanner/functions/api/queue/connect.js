@@ -3,9 +3,12 @@
 // which pushes terminal-availability and queue-assignment events.
 
 import { forwardToQueue } from '../../_shared/queue.js';
+import { resolveLocation } from '../../_shared/location.js';
 
 export async function onRequestGet(context) {
   const { request, env } = context;
   if (!env.TERMINAL_QUEUE) return new Response('Server not configured', { status: 500 });
-  return forwardToQueue(env, request, '/connect');
+  const loc = await resolveLocation(request, env);
+  if (loc.error) return new Response(loc.error, { status: loc.status });
+  return forwardToQueue(env, request, '/connect', loc.locationId);
 }

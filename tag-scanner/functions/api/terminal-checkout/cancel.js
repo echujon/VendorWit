@@ -4,10 +4,14 @@
 // /api/terminal-checkout.
 
 import { notifyTerminalStatus } from '../../_shared/queue.js';
+import { resolveLocation } from '../../_shared/location.js';
 
 export async function onRequestPost(context) {
-  const { params, env } = context;
+  const { request, params, env } = context;
   const checkoutId = params.id;
+
+  const loc = await resolveLocation(request, env);
+  if (loc.error) return json({ error: loc.error }, loc.status);
 
   if (!env.SQUARE_ACCESS_TOKEN) {
     return json({ error: 'Server not configured: missing SQUARE_ACCESS_TOKEN' }, 500);
@@ -31,7 +35,7 @@ export async function onRequestPost(context) {
   }
 
   const deviceId = data.checkout?.device_options?.device_id;
-  context.waitUntil?.(notifyTerminalStatus(env, deviceId, 'available'));
+  context.waitUntil?.(notifyTerminalStatus(env, deviceId, 'available', loc.locationId));
 
   return json({ checkoutId, status: data.checkout.status });
 }

@@ -47,6 +47,49 @@ in `wrangler.toml`. That means **two separate deploys**:
   `git log -- ../terminal-queue-worker/worker.js` against what's actually
   live if the queue starts behaving oddly after a change.
 
+## Organizations, locations, and shared inventory (D1)
+
+The app is multi-tenant: **organizations** contain **locations**, and
+everything scanned/sold at a location (inventory, and the Terminal queue
+above) is shared by everyone bound to it, isolated from every other
+location. Inventory lives in Cloudflare D1 (`migrations/0001_init.sql`)
+instead of the old per-browser `localStorage` - see
+`functions/_shared/location.js`, `functions/api/orgs.js`, and
+`functions/api/items.js`/`items/[id].js`.
+
+There's no full user login yet - a device binds to a location by entering
+its **join code** once in Settings (Location section), stored in
+`localStorage` (`js/storage.js`'s `getLocationCode`/`setLocationCode`) and
+sent as an `X-Location-Code` header on every inventory/queue request
+(query param `?locationCode=` for the WebSocket, which can't set custom
+headers). Anyone holding a location's code can act as that location - not a
+regression from the app's previous total lack of auth, but also not yet
+more secure. A real per-staff auth key is a planned later phase, alongside
+each organization connecting its own Square account via OAuth (so a global
+`SQUARE_ACCESS_TOKEN` isn't shared across every organization using the app).
+
+The Terminal queue is scoped the same way: `functions/_shared/queue.js`'s
+`getQueueStub` addresses the Durable Object by `idFromName(locationId)`
+instead of a single global instance, so each location gets its own
+isolated terminal pool automatically. One exception: Square's webhook
+(`functions/api/webhooks/square.js`) calls this server directly with no
+request to read a location header from, so it looks the location up from
+the `device_locations` D1 table by device id instead (kept in sync
+whenever a terminal is registered, in `functions/api/queue/terminals.js`).
+
+One-time setup for a fresh deploy:
+```
+wrangler d1 create vendorwit-inventory
+```
+Paste the `database_id` it prints into `wrangler.toml`'s `[[d1_databases]]`
+block, then apply the schema:
+```
+wrangler d1 migrations apply vendorwit-inventory --remote
+```
+(drop `--remote` for local dev with `wrangler pages dev`). Unlike the
+Durable Object above, D1 bindings work directly in a Pages project's
+`wrangler.toml` - no separate Worker needed.
+
 ## Routing: why `_worker.js` instead of file-based Functions
 
 This project uses Pages "Advanced Mode" - a single [`_worker.js`](_worker.js)

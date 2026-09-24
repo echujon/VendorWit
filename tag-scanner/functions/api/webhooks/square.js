@@ -14,7 +14,7 @@
 //                                     no trailing slash unless registered
 //                                     with one)
 
-import { notifyTerminalStatus } from '../../_shared/queue.js';
+import { notifyTerminalStatus, locationForDevice } from '../../_shared/queue.js';
 
 export async function onRequestPost(context) {
   const { request, env } = context;
@@ -47,7 +47,13 @@ export async function onRequestPost(context) {
     const checkout = event.data?.object?.checkout;
     const deviceId = checkout?.device_options?.device_id;
     if (checkout?.status === 'COMPLETED' || checkout?.status === 'CANCELED') {
-      context.waitUntil?.(notifyTerminalStatus(env, deviceId, 'available'));
+      // Square calls this endpoint directly - there's no client request to
+      // read an X-Location-Code header from, so look the location up by
+      // device instead (see functions/_shared/queue.js).
+      context.waitUntil?.((async () => {
+        const locationId = await locationForDevice(env, deviceId);
+        if (locationId) await notifyTerminalStatus(env, deviceId, 'available', locationId);
+      })());
     }
   }
 

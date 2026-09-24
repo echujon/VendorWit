@@ -9,15 +9,18 @@
 // it in the original /api/terminal-checkout request.
 
 import { notifyTerminalStatus } from '../../_shared/queue.js';
+import { resolveLocation } from '../../_shared/location.js';
 
 export async function onRequestPost(context) {
   const { request, env } = context;
   if (!env.TERMINAL_QUEUE) return new Response(JSON.stringify({ error: 'Server not configured' }), { status: 500 });
+  const loc = await resolveLocation(request, env);
+  if (loc.error) return new Response(JSON.stringify({ error: loc.error }), { status: loc.status });
 
   const body = await request.json().catch(() => ({}));
   const deviceId = (body.deviceId || '').trim();
   if (!deviceId) return new Response(JSON.stringify({ error: 'deviceId is required' }), { status: 400 });
 
-  await notifyTerminalStatus(env, deviceId, 'available');
+  await notifyTerminalStatus(env, deviceId, 'available', loc.locationId);
   return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json' } });
 }

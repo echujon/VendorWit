@@ -13,9 +13,17 @@
 //   SQUARE_ENVIRONMENT   - "production" or "sandbox" (defaults to sandbox)
 
 import { notifyTerminalStatus } from '../_shared/queue.js';
+import { resolveLocation } from '../_shared/location.js';
 
 export async function onRequestPost(context) {
   const { request, env } = context;
+
+  // Named appLocationId to avoid confusion with Square's own "location"
+  // concept (a business location within Square's own system) used further
+  // down in this file - the two are unrelated.
+  const loc = await resolveLocation(request, env);
+  if (loc.error) return json({ error: loc.error }, loc.status);
+  const appLocationId = loc.locationId;
 
   let body;
   try {
@@ -119,7 +127,7 @@ export async function onRequestPost(context) {
     return json({ error: data.errors?.[0]?.detail || 'Square API error (checkout)' }, squareRes.status);
   }
 
-  context.waitUntil?.(notifyTerminalStatus(env, deviceId, 'busy'));
+  context.waitUntil?.(notifyTerminalStatus(env, deviceId, 'busy', appLocationId));
 
   return json({ checkoutId: data.checkout.id, status: data.checkout.status });
 }
