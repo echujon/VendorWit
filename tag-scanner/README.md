@@ -90,6 +90,50 @@ wrangler d1 migrations apply vendorwit-inventory --remote
 Durable Object above, D1 bindings work directly in a Pages project's
 `wrangler.toml` - no separate Worker needed.
 
+## Square OAuth per organization
+
+Each organization can connect its own Square account instead of relying on
+the single global `SQUARE_ACCESS_TOKEN` (Settings → Square Account →
+"Connect with Square"). This is **additive, not a cutover**: an
+organization that hasn't connected keeps working off the global fallback
+token exactly as before - see `functions/_shared/square.js`'s
+`getSquareCredentials(env, organizationId)`, which every Square-calling
+endpoint (`terminal-checkout.js` and friends, plus the new
+`functions/api/square/*` endpoints below) now goes through instead of
+reading `env.SQUARE_ACCESS_TOKEN` directly.
+
+The actual feature this unlocks: **generating Terminal pairing codes from
+inside the app** (`functions/api/square/device-codes.js` +
+`device-codes-status.js`, wired into Settings' "Square Account" section),
+replacing the manual `curl` against Square's Devices API from earlier in
+this project's life.
+
+Flow: `oauth/start.js` redirects to Square's consent screen (organization
+resolved from the location join code, same as everywhere else - see
+`functions/_shared/location.js`); `oauth/callback.js` exchanges the
+authorization code for tokens and stores them **encrypted** (AES-GCM via
+`functions/_shared/crypto.js`) in the new `square_connections` D1 table
+(`migrations/0002_square_oauth.sql`). Tokens are refreshed automatically
+when near expiry (`getSquareCredentials` checks `expires_at` before every
+use).
+
+Setup this needs, on top of the D1 migration steps above:
+- Register the app's OAuth redirect URI in the Square Developer Dashboard
+  as `https://<deployed-url>/api/square/oauth/callback` (byte-for-byte,
+  same lesson as the webhook URL)
+- `SQUARE_OAUTH_CLIENT_ID` → not sensitive, `wrangler.toml`'s `[vars]`
+- `SQUARE_OAUTH_CLIENT_SECRET` → sensitive, dashboard Secret
+- `SQUARE_OAUTH_ENCRYPTION_KEY` → sensitive, dashboard Secret, generate
+  once with `openssl rand -base64 32` (protects the tokens stored in D1,
+  not the tokens themselves - losing this key means every connected
+  organization needs to reconnect, so store it somewhere safe too)
+
+**No role gating yet** — any device holding a location's join code can
+currently connect/reconnect that organization's Square account or generate
+pairing codes, the same no-auth posture the rest of the app has. An
+admin-vs-staff distinction (only an "admin" should be able to touch Square
+account connection) is a recognized, deliberately deferred next step.
+
 ## Routing: why `_worker.js` instead of file-based Functions
 
 This project uses Pages "Advanced Mode" - a single [`_worker.js`](_worker.js)

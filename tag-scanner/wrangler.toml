@@ -14,6 +14,14 @@ SQUARE_ENVIRONMENT = "production"
 # https:// and no trailing slash) - update this if the deployed domain
 # ever changes, and update the subscription in Square to match.
 SQUARE_WEBHOOK_NOTIFICATION_URL = "https://vendortools.pages.dev/api/webhooks/square"
+# Square's Application ID for this app's OAuth ("Connect with Square") flow
+# - not sensitive, same value shown in the Square Developer Dashboard's
+# OAuth settings. The matching SQUARE_OAUTH_CLIENT_SECRET *is* sensitive
+# and stays a dashboard-managed Secret, alongside a new
+# SQUARE_OAUTH_ENCRYPTION_KEY Secret (generate with `openssl rand -base64
+# 32`) used to encrypt stored per-organization tokens at rest - see
+# functions/_shared/crypto.js and functions/_shared/square.js.
+SQUARE_OAUTH_CLIENT_ID = "sq0idp-bmDUDiEKmuvccx_2bohJcQ"
 
 # TerminalQueue coordinates a shared pool of Square Terminals across
 # multiple simultaneous app instances. A Pages project can't self-host a

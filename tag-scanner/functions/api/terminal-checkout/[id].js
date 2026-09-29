@@ -4,6 +4,7 @@
 
 import { notifyTerminalStatus } from '../../_shared/queue.js';
 import { resolveLocation } from '../../_shared/location.js';
+import { getSquareCredentials, squareBaseUrl } from '../../_shared/square.js';
 
 export async function onRequestGet(context) {
   const { request, params, env } = context;
@@ -12,17 +13,16 @@ export async function onRequestGet(context) {
   const loc = await resolveLocation(request, env);
   if (loc.error) return json({ error: loc.error }, loc.status);
 
-  if (!env.SQUARE_ACCESS_TOKEN) {
+  const creds = await getSquareCredentials(env, loc.organizationId);
+  if (!creds.accessToken) {
     return json({ error: 'Server not configured: missing SQUARE_ACCESS_TOKEN' }, 500);
   }
 
-  const baseUrl = env.SQUARE_ENVIRONMENT === 'production'
-    ? 'https://connect.squareup.com'
-    : 'https://connect.squareupsandbox.com';
+  const baseUrl = squareBaseUrl(creds.environment);
 
   const squareRes = await fetch(`${baseUrl}/v2/terminals/checkouts/${checkoutId}`, {
     headers: {
-      'Authorization': `Bearer ${env.SQUARE_ACCESS_TOKEN}`,
+      'Authorization': `Bearer ${creds.accessToken}`,
       'Square-Version': '2026-07-15'
     }
   });

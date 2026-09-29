@@ -26,6 +26,11 @@ import * as debugSquare from './functions/api/debug-square.js';
 import * as orgs from './functions/api/orgs.js';
 import * as items from './functions/api/items.js';
 import * as itemsById from './functions/api/items/[id].js';
+import * as squareOauthStart from './functions/api/square/oauth/start.js';
+import * as squareOauthCallback from './functions/api/square/oauth/callback.js';
+import * as squareConnection from './functions/api/square/connection.js';
+import * as squareDeviceCodes from './functions/api/square/device-codes.js';
+import * as squareDeviceCodesStatus from './functions/api/square/device-codes-status.js';
 
 export default {
   async fetch(request, env, ctx) {
@@ -94,6 +99,22 @@ export default {
       context.params = { id: itemIdMatch[1] };
       if (method === 'PATCH') return itemsById.onRequestPatch(context);
       if (method === 'DELETE') return itemsById.onRequestDelete(context);
+    }
+
+    if (pathname === '/api/square/oauth/start' && method === 'GET') {
+      return squareOauthStart.onRequestGet(context);
+    }
+    if (pathname === '/api/square/oauth/callback' && method === 'GET') {
+      return squareOauthCallback.onRequestGet(context);
+    }
+    if (pathname === '/api/square/connection' && method === 'GET') {
+      return squareConnection.onRequestGet(context);
+    }
+    if (pathname === '/api/square/device-codes' && method === 'POST') {
+      return squareDeviceCodes.onRequestPost(context);
+    }
+    if (pathname === '/api/square/device-codes-status' && method === 'GET') {
+      return squareDeviceCodesStatus.onRequestGet(context);
     }
 
     // Not an API route - serve the static site (index.html, css/, js/,

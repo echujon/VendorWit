@@ -88,6 +88,30 @@
     </div>
 
     <div class="settings-section">
+      <h2>Square Account</h2>
+      <p>Connect your organization's own Square account so Terminal pairing codes can be generated right here, instead of running commands manually. Requires a location to be joined/created above first.</p>
+      <div id="square-connection-status" style="font-weight:600;margin-bottom:0.75rem;"></div>
+      <a class="btn btn-outline" id="btn-connect-square" href="/api/square/oauth/start" style="display:inline-block;text-decoration:none;">Connect with Square</a>
+
+      <div id="pairing-section" style="display:none;margin-top:1.25rem;">
+        <div class="settings-field">
+          <label for="new-pairing-name">Terminal Name</label>
+          <input type="text" id="new-pairing-name" placeholder="Register 1">
+        </div>
+        <button class="btn btn-outline" id="btn-generate-pairing-code" type="button">Generate Pairing Code</button>
+
+        <div id="pairing-code-display" style="display:none;background:var(--surface,#fff);border:1px solid var(--border,#e8d5c0);border-radius:8px;padding:0.75rem 1rem;margin-top:1rem;">
+          <span style="font-size:0.75rem;color:var(--muted,#8a7060);text-transform:uppercase;letter-spacing:0.05em;">Enter this on the Terminal (Settings → Terminal API)</span>
+          <div style="display:flex;align-items:center;gap:0.75rem;margin-top:0.25rem;">
+            <span id="pairing-code-value" style="font-size:1.75rem;font-weight:700;letter-spacing:0.15em;font-family:monospace;"></span>
+            <button class="btn btn-outline" id="btn-check-pairing" type="button" style="font-size:0.8rem;padding:0.3rem 0.6rem;">Check status</button>
+          </div>
+          <div id="pairing-status-text" style="margin-top:0.5rem;color:var(--muted,#8a7060);font-size:0.85rem;"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-section">
       <h2>Square Terminals</h2>
       <p>Register each paired Square Terminal here. When several people use the app at once, checkouts queue automatically and route to whichever terminal frees up next. Find each device id by pairing it (Square's device code flow) and calling Square's Devices API — it looks like "device:XXXXXXXXXXXXXXXX".</p>
       <p><strong>Use this for an organization with dedicated Square Terminal or Square Register hardware</strong> (standalone devices with their own screen). A single registered terminal works fine too — with only one, every checkout goes straight to it with no waiting, so this is safe to use even for just one device.</p>
@@ -168,6 +192,7 @@
       setLocationCode(code);
       renderLocationStatus();
       loadTerminals();
+      renderSquareConnectionStatus();
     });
 
     document.getElementById('btn-create-org').addEventListener('click', async () => {
@@ -187,12 +212,111 @@
         setLocationCode(data.joinCode);
         renderLocationStatus();
         loadTerminals();
+        renderSquareConnectionStatus();
       } catch (err) {
         alert(err.message);
       } finally {
         btn.disabled = false;
       }
     });
+
+    // --- Square Account (OAuth) ---
+    const btnConnectSquare = document.getElementById('btn-connect-square');
+    const pairingSection = document.getElementById('pairing-section');
+    let currentPairingCodeId = null;
+
+    async function renderSquareConnectionStatus() {
+      const status = document.getElementById('square-connection-status');
+      // Plain <a href> navigation can't send custom headers, same
+      // limitation as the WebSocket connect elsewhere in the app - pass
+      // the location code as a query param instead.
+      btnConnectSquare.href = '/api/square/oauth/start?locationCode=' + encodeURIComponent(getLocationCode());
+
+      if (!getLocationCode()) {
+        status.textContent = 'Join or create a location above first.';
+        pairingSection.style.display = 'none';
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/square/connection', { headers: locationHeaders() });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to check Square connection');
+
+        if (data.connected) {
+          status.textContent = `Connected as merchant ${data.merchantId} (${data.environment}).`;
+          btnConnectSquare.textContent = 'Reconnect with Square';
+          pairingSection.style.display = 'block';
+        } else {
+          status.textContent = 'Not connected. Terminal checkouts will use the fallback token until this organization connects its own Square account.';
+          btnConnectSquare.textContent = 'Connect with Square';
+          pairingSection.style.display = 'none';
+        }
+      } catch (err) {
+        status.textContent = 'Could not check Square connection: ' + err.message;
+      }
+    }
+
+    // The OAuth callback redirects back here with one of these params.
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('square_connected')) {
+      alert('Square account connected!');
+      history.replaceState(null, '', '/settings');
+    } else if (urlParams.get('square_connect_error')) {
+      alert('Could not connect Square account: ' + urlParams.get('square_connect_error'));
+      history.replaceState(null, '', '/settings');
+    }
+
+    document.getElementById('btn-generate-pairing-code').addEventListener('click', async () => {
+      const name = document.getElementById('new-pairing-name').value.trim() || 'Terminal';
+      const btn = document.getElementById('btn-generate-pairing-code');
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/square/device-codes', {
+          method: 'POST',
+          headers: locationHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ name })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to generate pairing code');
+
+        currentPairingCodeId = data.id;
+        document.getElementById('pairing-code-value').textContent = data.code;
+        document.getElementById('pairing-status-text').textContent = 'Waiting for pairing...';
+        document.getElementById('pairing-code-display').style.display = 'block';
+      } catch (err) {
+        alert(err.message);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById('btn-check-pairing').addEventListener('click', async () => {
+      if (!currentPairingCodeId) return;
+      const btn = document.getElementById('btn-check-pairing');
+      btn.disabled = true;
+      try {
+        const res = await fetch(`/api/square/device-codes-status?id=${encodeURIComponent(currentPairingCodeId)}`, {
+          headers: locationHeaders()
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to check pairing status');
+
+        if (data.status === 'PAIRED' && data.deviceId) {
+          document.getElementById('pairing-status-text').textContent = 'Paired! Device ID filled in below - click Add Terminal to finish.';
+          document.getElementById('new-terminal-name').value = document.getElementById('new-pairing-name').value.trim() || 'Terminal';
+          document.getElementById('new-terminal-device-id').value = data.deviceId;
+        } else {
+          document.getElementById('pairing-status-text').textContent = `Still ${data.status.toLowerCase()} - enter the code on the Terminal, then check again.`;
+        }
+      } catch (err) {
+        alert(err.message);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    renderSquareConnectionStatus();
 
     const settings = getSettings();
     document.getElementById('anthropic-key').value = settings.anthropicKey || '';

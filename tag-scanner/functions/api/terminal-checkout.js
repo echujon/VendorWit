@@ -8,12 +8,15 @@
 // the client (see js/app.js / settings), so a single deployment isn't locked
 // to one fixed Terminal.
 //
-// Required environment variables:
+// Credentials come from functions/_shared/square.js: the organization's
+// own connected Square account (via OAuth) if one exists, else these
+// legacy global env vars as a fallback:
 //   SQUARE_ACCESS_TOKEN  - sandbox or production access token
 //   SQUARE_ENVIRONMENT   - "production" or "sandbox" (defaults to sandbox)
 
 import { notifyTerminalStatus } from '../_shared/queue.js';
 import { resolveLocation } from '../_shared/location.js';
+import { getSquareCredentials, squareBaseUrl } from '../_shared/square.js';
 
 export async function onRequestPost(context) {
   const { request, env } = context;
@@ -57,16 +60,15 @@ export async function onRequestPost(context) {
     return json({ error: 'deviceId is required (set it in Settings)' }, 400);
   }
 
-  if (!env.SQUARE_ACCESS_TOKEN) {
+  const creds = await getSquareCredentials(env, loc.organizationId);
+  if (!creds.accessToken) {
     return json({ error: 'Server not configured: missing SQUARE_ACCESS_TOKEN' }, 500);
   }
 
-  const baseUrl = env.SQUARE_ENVIRONMENT === 'production'
-    ? 'https://connect.squareup.com'
-    : 'https://connect.squareupsandbox.com';
+  const baseUrl = squareBaseUrl(creds.environment);
 
   const headers = {
-    'Authorization': `Bearer ${env.SQUARE_ACCESS_TOKEN}`,
+    'Authorization': `Bearer ${creds.accessToken}`,
     'Content-Type': 'application/json',
     'Square-Version': '2026-07-15'
   };
