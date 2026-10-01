@@ -22,7 +22,11 @@ export async function onRequestGet(context) {
   ).bind(state, loc.organizationId).run();
 
   const baseUrl = squareBaseUrl(env.SQUARE_ENVIRONMENT);
-  const scope = ['DEVICE_CREDENTIAL_MANAGEMENT', 'PAYMENTS_WRITE', 'ORDERS_WRITE'].join('+');
+  // MERCHANT_PROFILE_READ is needed for the merchants/me lookup in
+  // device-codes.js (finds which Square location to attach a pairing code
+  // to) - easy to miss since the legacy global token this falls back to
+  // is a broader personal access token, not scope-limited like OAuth.
+  const scope = ['DEVICE_CREDENTIAL_MANAGEMENT', 'PAYMENTS_WRITE', 'ORDERS_WRITE', 'MERCHANT_PROFILE_READ'].join('+');
   const authorizeUrl = `${baseUrl}/oauth2/authorize`
     + `?client_id=${encodeURIComponent(env.SQUARE_OAUTH_CLIENT_ID)}`
     + `&scope=${scope}`
