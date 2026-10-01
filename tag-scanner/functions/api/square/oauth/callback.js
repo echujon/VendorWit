@@ -17,14 +17,14 @@ export async function onRequestGet(context) {
   const state = url.searchParams.get('state');
   const error = url.searchParams.get('error');
 
-  if (error) return redirectToSettings(false, error);
-  if (!code || !state) return redirectToSettings(false, 'missing_code_or_state');
+  if (error) return redirectToSettings(url, false, error);
+  if (!code || !state) return redirectToSettings(url, false, 'missing_code_or_state');
   if (!env.DB) return new Response('Server not configured (DB)', { status: 500 });
 
   const stateRow = await env.DB.prepare(
     'SELECT organization_id FROM square_oauth_states WHERE state = ?'
   ).bind(state).first();
-  if (!stateRow) return redirectToSettings(false, 'invalid_state');
+  if (!stateRow) return redirectToSettings(url, false, 'invalid_state');
 
   // Single-use - delete immediately regardless of what happens next.
   await env.DB.prepare('DELETE FROM square_oauth_states WHERE state = ?').bind(state).run();
@@ -42,7 +42,7 @@ export async function onRequestGet(context) {
   });
   const tokenData = await tokenRes.json();
   if (!tokenRes.ok) {
-    return redirectToSettings(false, tokenData.error_description || tokenData.error || 'token_exchange_failed');
+    return redirectToSettings(url, false, tokenData.error_description || tokenData.error || 'token_exchange_failed');
   }
 
   const encryptedAccess = await encrypt(env, tokenData.access_token);
@@ -63,10 +63,13 @@ export async function onRequestGet(context) {
     stateRow.organization_id, tokenData.merchant_id, encryptedAccess, encryptedRefresh, environment, tokenData.expires_at
   ).run();
 
-  return redirectToSettings(true);
+  return redirectToSettings(url, true);
 }
 
-function redirectToSettings(success, reason) {
+// Response.redirect() needs an absolute URL, not a relative path - build
+// one from the incoming request's own origin rather than hardcoding a
+// domain (which would break across local dev/tunnel/production).
+function redirectToSettings(requestUrl, success, reason) {
   const qs = success ? 'square_connected=1' : `square_connect_error=${encodeURIComponent(reason || 'unknown')}`;
-  return Response.redirect(`/settings?${qs}`, 302);
+  return Response.redirect(`${requestUrl.origin}/settings?${qs}`, 302);
 }
