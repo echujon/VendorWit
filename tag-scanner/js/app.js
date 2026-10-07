@@ -49,7 +49,10 @@ const scanPlaceholder = document.querySelector('.scan-placeholder');
 
 // --- Buttons ---
 const btnCamera = document.getElementById('btn-camera');
-const btnCapture = document.getElementById('btn-capture');
+const btnCameraIcon = document.getElementById('btn-camera-icon');
+const btnCameraLabel = document.getElementById('btn-camera-label');
+const CAMERA_ICON = '<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>';
+const CAPTURE_ICON = '<circle cx="12" cy="12" r="9"/>';
 const btnUpload = document.getElementById('btn-upload');
 const btnNewItem = document.getElementById('btn-new-item');
 const btnDiscardScan = document.getElementById('btn-discard-scan');
@@ -67,6 +70,11 @@ const reviewCartList = document.getElementById('review-cart-list');
 const reviewTotalDisplay = document.getElementById('review-total-display');
 const btnReviewTerminal = document.getElementById('btn-review-terminal');
 const pendingSalesBar = document.getElementById('pending-sales-bar');
+const btnOpenQueue = document.getElementById('btn-open-queue');
+const queueBadge = document.getElementById('queue-badge');
+const queueModal = document.getElementById('queue-modal');
+const btnQueueModalClose = document.getElementById('btn-queue-modal-close');
+const queueModalList = document.getElementById('queue-modal-list');
 const btnReviewVenmo = document.getElementById('btn-review-venmo');
 const btnReviewSquare = document.getElementById('btn-review-square');
 const btnReviewComplete = document.getElementById('btn-review-complete');
@@ -98,8 +106,9 @@ async function startCamera() {
     previewImg.classList.add('hidden');
     scanOverlay.style.display = 'flex';
     scanPlaceholder.style.display = 'none';
-    btnCamera.textContent = 'Stop';
-    btnCapture.disabled = false;
+    btnCameraIcon.innerHTML = CAPTURE_ICON;
+    btnCameraIcon.setAttribute('fill', 'currentColor');
+    btnCameraLabel.textContent = 'Capture';
     cameraActive = true;
   } catch (err) {
     toast('Camera access denied', 'error');
@@ -115,8 +124,9 @@ function stopCamera() {
   video.classList.add('hidden');
   scanOverlay.style.display = 'none';
   scanPlaceholder.style.display = 'flex';
-  btnCamera.textContent = 'Camera';
-  btnCapture.disabled = true;
+  btnCameraIcon.innerHTML = CAMERA_ICON;
+  btnCameraIcon.setAttribute('fill', 'none');
+  btnCameraLabel.textContent = 'Camera';
   cameraActive = false;
 }
 
@@ -1317,6 +1327,11 @@ let queueSocket = null;
 const pendingSales = new Map();   // saleId -> { items, total, status, queueId, deviceId, checkoutId, attemptsLeft, pollTimer }
 const queueIdToSaleId = new Map(); // queueId -> saleId, for routing the WS "assigned" push
 
+// Every active sale at this location, not just this device's own (that's
+// `pendingSales` above) - kept in sync via the same WebSocket's "state"
+// broadcasts, for the shared Queue view (#queue-modal).
+let locationActiveSales = [];
+
 // Every queue/terminal-checkout request needs to say which location it's
 // for - X-Location-Code as a header (or ?locationCode= for the WebSocket,
 // which can't set custom headers), resolved server-side in
@@ -1325,6 +1340,64 @@ const queueIdToSaleId = new Map(); // queueId -> saleId, for routing the WS "ass
 function locationHeaders(extra = {}) {
   return { 'X-Location-Code': getLocationCode(), ...extra };
 }
+
+function queueSaleStatusText(sale) {
+  switch (sale.status) {
+    case 'queued': return 'Waiting in line for a terminal...';
+    case 'assigned':
+    case 'sending': return 'Sending to Terminal...';
+    case 'waiting-for-card': return 'Waiting for card...';
+    default: return sale.status || '';
+  }
+}
+
+function renderQueueBadge() {
+  const count = locationActiveSales.length;
+  queueBadge.textContent = String(count);
+  queueBadge.classList.toggle('hidden', count === 0);
+}
+
+function renderQueueModalList() {
+  if (!locationActiveSales.length) {
+    queueModalList.innerHTML = '<div class="empty-state">No pending sales right now.</div>';
+    return;
+  }
+  const myClientId = getClientId();
+  queueModalList.innerHTML = locationActiveSales.map(sale => {
+    const items = Array.isArray(sale.cart) ? sale.cart : [];
+    const itemsSummary = items.map(item => `${item.quantity}x ${item.name || '(no name)'}`).join(', ');
+    return `
+    <div class="pending-sale-row${sale.clientId === myClientId ? '' : ' other-device'}">
+      <div class="pending-sale-info">
+        <span class="pending-sale-total">$${(sale.total || 0).toFixed(2)}</span>
+        · <span class="pending-sale-status">${esc(queueSaleStatusText(sale))}</span>
+        ${itemsSummary ? `<div class="pending-sale-items">${esc(itemsSummary)}</div>` : ''}
+        ${sale.clientId === myClientId ? '' : '<div class="pending-sale-owner">Another device</div>'}
+      </div>
+    </div>
+  `;
+  }).join('');
+}
+
+async function openQueueModal() {
+  queueModal.classList.remove('hidden');
+  try {
+    const res = await fetch('/api/queue/active-sales', { headers: locationHeaders() });
+    const data = await res.json();
+    if (res.ok) locationActiveSales = data;
+  } catch {
+    // Fine - whatever the last WebSocket broadcast had is still shown.
+  }
+  renderQueueModalList();
+  renderQueueBadge();
+}
+
+function closeQueueModal() {
+  queueModal.classList.add('hidden');
+}
+
+btnOpenQueue.addEventListener('click', openQueueModal);
+btnQueueModalClose.addEventListener('click', closeQueueModal);
 
 // Client-driven fallback for freeing a terminal: the server-side paths
 // (webhook, status-poll) assume Square echoes device_options.device_id back
@@ -1363,6 +1436,7 @@ function renderPendingSales() {
         <span class="pending-sale-total">$${sale.total.toFixed(2)}</span>
         · <span class="pending-sale-status">${esc(saleStatusText(sale))}</span>
       </div>
+      <button class="pending-sale-edit" data-sale-id="${saleId}">Edit</button>
       <button class="pending-sale-cancel" data-sale-id="${saleId}">Cancel</button>
     </div>
   `).join('');
@@ -1374,27 +1448,51 @@ function removePendingSale(saleId) {
   if (sale?.queueId) queueIdToSaleId.delete(sale.queueId);
   pendingSales.delete(saleId);
   renderPendingSales();
+  // Best-effort - the shared Queue view's entry for this sale should
+  // disappear for everyone, not just locally.
+  fetch(`/api/queue/active-sales/${saleId}`, { method: 'DELETE', headers: locationHeaders() }).catch(() => {});
+}
+
+// Square's Terminal API has no "update amount" endpoint - canceling and
+// resending is the only way to change a sale once it's been sent, full
+// stop. This just gets a terminal/queue slot the sale is holding back,
+// shared by both plain Cancel and Edit (which immediately starts a new
+// one with the same items, so it doesn't feel like starting over).
+async function cancelSaleOnSquare(sale) {
+  if (sale.status === 'queued') {
+    await fetch('/api/queue/cancel', {
+      method: 'POST',
+      headers: locationHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ clientId: getClientId(), queueId: sale.queueId })
+    });
+  } else if (sale.checkoutId) {
+    await fetch(`/api/terminal-checkout/${sale.checkoutId}/cancel`, { method: 'POST', headers: locationHeaders() });
+    notifyTerminalFreedClientSide(sale.deviceId);
+  }
 }
 
 pendingSalesBar.addEventListener('click', async (e) => {
-  const btn = e.target.closest('.pending-sale-cancel');
+  const cancelBtn = e.target.closest('.pending-sale-cancel');
+  const editBtn = e.target.closest('.pending-sale-edit');
+  const btn = cancelBtn || editBtn;
   if (!btn) return;
   const saleId = btn.dataset.saleId;
   const sale = pendingSales.get(saleId);
   if (!sale) return;
   btn.disabled = true;
   try {
-    if (sale.status === 'queued') {
-      await fetch('/api/queue/cancel', {
-        method: 'POST',
-        headers: locationHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ clientId: getClientId(), queueId: sale.queueId })
-      });
-      toast('Left the terminal queue', 'success');
-    } else if (sale.checkoutId) {
-      await fetch(`/api/terminal-checkout/${sale.checkoutId}/cancel`, { method: 'POST', headers: locationHeaders() });
-      notifyTerminalFreedClientSide(sale.deviceId);
-      toast('Terminal checkout canceled', 'success');
+    await cancelSaleOnSquare(sale);
+    if (editBtn) {
+      // Put the sale's items straight back into the cart and open Review
+      // Sale already filled in, instead of making you re-scan everything -
+      // tweak price/quantity, then "Charge via Terminal" sends it as a
+      // fresh checkout (the only option Square's API allows).
+      cart = sale.items.map(item => ({ ...item }));
+      renderCart();
+      openReviewModal();
+      toast('Adjust the sale, then charge again', 'success');
+    } else {
+      toast(sale.status === 'queued' ? 'Left the terminal queue' : 'Terminal checkout canceled', 'success');
     }
   } catch (err) {
     toast('Cancel failed: ' + err.message, 'error');
@@ -1403,10 +1501,28 @@ pendingSalesBar.addEventListener('click', async (e) => {
   }
 });
 
+function checkMissedAssignments() {
+  for (const queueId of Array.from(queueIdToSaleId.keys())) {
+    fetch(`/api/queue/assignment-status?queueId=${encodeURIComponent(queueId)}`, { headers: locationHeaders() })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (!data || !data.assigned) return;
+        const saleId = queueIdToSaleId.get(queueId);
+        if (!saleId) return;
+        queueIdToSaleId.delete(queueId);
+        sendCheckoutForSale(saleId, data.deviceId);
+      })
+      .catch(() => {});
+  }
+}
+
 function connectQueueSocket() {
   if (queueSocket && (queueSocket.readyState === WebSocket.OPEN || queueSocket.readyState === WebSocket.CONNECTING)) return;
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   queueSocket = new WebSocket(`${protocol}//${location.host}/api/queue/connect?clientId=${getClientId()}&locationCode=${encodeURIComponent(getLocationCode())}`);
+  queueSocket.addEventListener('open', () => {
+    checkMissedAssignments();
+  });
   queueSocket.addEventListener('message', (event) => {
     let msg;
     try { msg = JSON.parse(event.data); } catch { return; }
@@ -1415,6 +1531,11 @@ function connectQueueSocket() {
       if (!saleId) return;
       queueIdToSaleId.delete(msg.queueId);
       sendCheckoutForSale(saleId, msg.deviceId);
+    }
+    if (msg.type === 'state' && Array.isArray(msg.activeSales)) {
+      locationActiveSales = msg.activeSales;
+      renderQueueBadge();
+      if (!queueModal.classList.contains('hidden')) renderQueueModalList();
     }
   });
   queueSocket.addEventListener('close', () => {
@@ -1442,6 +1563,11 @@ async function sendCheckoutForSale(saleId, deviceId) {
     sale.status = 'waiting-for-card';
     sale.cardStatus = data.status;
     renderPendingSales();
+    fetch(`/api/queue/active-sales/${saleId}`, {
+      method: 'PATCH',
+      headers: locationHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ status: 'waiting-for-card', checkoutId: data.checkoutId, deviceId })
+    }).catch(() => {});
     pollPendingSale(saleId, 45);
   } catch (err) {
     toast('Terminal error: ' + err.message, 'error');
@@ -1512,6 +1638,18 @@ btnReviewTerminal.addEventListener('click', async () => {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Could not reach the terminal queue');
+
+    // Report into the shared Queue view too - everyone at this location
+    // should see this sale, not just the device that started it.
+    fetch('/api/queue/active-sales', {
+      method: 'POST',
+      headers: locationHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        saleId, clientId: getClientId(), cart: items, total,
+        deviceId: data.status === 'assigned' ? data.deviceId : null,
+        status: data.status === 'assigned' ? 'assigned' : 'queued'
+      })
+    }).catch(() => {});
 
     if (data.status === 'assigned') {
       sendCheckoutForSale(saleId, data.deviceId);
@@ -1585,11 +1723,9 @@ btnVenmoModalSuccess.addEventListener('click', () => {
 
 // --- Event listeners ---
 btnCamera.addEventListener('click', () => {
-  if (cameraActive) stopCamera();
+  if (cameraActive) captureFrame();
   else startCamera();
 });
-
-btnCapture.addEventListener('click', captureFrame);
 btnUpload.addEventListener('click', () => fileInput.click());
 btnExport.addEventListener('click', async () => { exportCSV(await getRecords()); toast('CSV downloaded', 'success'); });
 
@@ -1640,3 +1776,31 @@ renderRecords();
 scanOverlay.style.display = 'none';
 scanPlaceholder.style.display = 'flex';
 video.classList.add('hidden');
+
+// Shows the connected Square business name at the top instead of the
+// generic app name, once there's a location bound and a Square account
+// connected for its organization - falls back to "Tag Scanner" otherwise.
+// Stale-while-revalidate: paint instantly from the last-known name cached
+// in localStorage (non-sensitive - just a display label, never a token),
+// then always re-fetch in the background and correct it if it changed, so
+// there's no TTL to guess at and no stale window beyond the current view.
+if (getLocationCode()) {
+  const businessNameCacheKey = `businessName:${getLocationCode()}`;
+  const cachedBusinessName = localStorage.getItem(businessNameCacheKey);
+  if (cachedBusinessName) {
+    document.getElementById('app-title').textContent = cachedBusinessName;
+  }
+  fetch('/api/square/connection', { headers: locationHeaders() })
+    .then(res => res.ok ? res.json() : null)
+    .then(data => {
+      if (data?.connected && data.businessName) {
+        if (data.businessName !== cachedBusinessName) {
+          document.getElementById('app-title').textContent = data.businessName;
+        }
+        localStorage.setItem(businessNameCacheKey, data.businessName);
+      } else {
+        localStorage.removeItem(businessNameCacheKey);
+      }
+    })
+    .catch(() => {});
+}

@@ -49,18 +49,30 @@ export async function onRequestGet(context) {
   const encryptedRefresh = await encrypt(env, tokenData.refresh_token);
   const environment = env.SQUARE_ENVIRONMENT === 'production' ? 'production' : 'sandbox';
 
+  // Best-effort - the connection is still saved below even if this fails,
+  // just without a friendly name to show (falls back to the merchant id).
+  let businessName = null;
+  try {
+    const merchantRes = await fetch(`${baseUrl}/v2/merchants/${tokenData.merchant_id}`, {
+      headers: { 'Authorization': `Bearer ${tokenData.access_token}`, 'Square-Version': '2026-07-15' }
+    });
+    const merchantData = await merchantRes.json();
+    if (merchantRes.ok) businessName = merchantData.merchant.business_name;
+  } catch {}
+
   await env.DB.prepare(`
-    INSERT INTO square_connections (organization_id, merchant_id, access_token, refresh_token, environment, expires_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+    INSERT INTO square_connections (organization_id, merchant_id, business_name, access_token, refresh_token, environment, expires_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(organization_id) DO UPDATE SET
       merchant_id = excluded.merchant_id,
+      business_name = excluded.business_name,
       access_token = excluded.access_token,
       refresh_token = excluded.refresh_token,
       environment = excluded.environment,
       expires_at = excluded.expires_at,
       updated_at = datetime('now')
   `).bind(
-    stateRow.organization_id, tokenData.merchant_id, encryptedAccess, encryptedRefresh, environment, tokenData.expires_at
+    stateRow.organization_id, tokenData.merchant_id, businessName, encryptedAccess, encryptedRefresh, environment, tokenData.expires_at
   ).run();
 
   return redirectToSettings(url, true);

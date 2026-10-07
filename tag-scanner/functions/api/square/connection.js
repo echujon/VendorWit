@@ -14,11 +14,11 @@ export async function onRequestGet(context) {
   if (loc.error) return json({ error: loc.error }, loc.status);
 
   const row = await env.DB.prepare(
-    'SELECT merchant_id, environment FROM square_connections WHERE organization_id = ?'
+    'SELECT merchant_id, business_name, environment FROM square_connections WHERE organization_id = ?'
   ).bind(loc.organizationId).first();
 
   return json(row
-    ? { connected: true, merchantId: row.merchant_id, environment: row.environment }
+    ? { connected: true, merchantId: row.merchant_id, businessName: row.business_name || null, environment: row.environment }
     : { connected: false });
 }
 

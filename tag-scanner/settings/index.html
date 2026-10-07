@@ -244,7 +244,7 @@
         if (!res.ok) throw new Error(data.error || 'Failed to check Square connection');
 
         if (data.connected) {
-          status.textContent = `Connected as merchant ${data.merchantId} (${data.environment}).`;
+          status.textContent = `Connected as ${data.businessName || ('merchant ' + data.merchantId)} (${data.environment}).`;
           btnConnectSquare.textContent = 'Reconnect with Square';
           pairingSection.style.display = 'block';
         } else {

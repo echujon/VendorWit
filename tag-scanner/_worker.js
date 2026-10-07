@@ -22,6 +22,9 @@ import * as queueCancel from './functions/api/queue/cancel.js';
 import * as queueClear from './functions/api/queue/clear.js';
 import * as queueTerminalFreed from './functions/api/queue/terminal-freed.js';
 import * as queueTerminals from './functions/api/queue/terminals.js';
+import * as queueAssignmentStatus from './functions/api/queue/assignment-status.js';
+import * as queueActiveSales from './functions/api/queue/active-sales.js';
+import * as queueActiveSalesById from './functions/api/queue/active-sales/[id].js';
 import * as debugSquare from './functions/api/debug-square.js';
 import * as orgs from './functions/api/orgs.js';
 import * as items from './functions/api/items.js';
@@ -81,10 +84,23 @@ export default {
     if (pathname === '/api/queue/terminal-freed' && method === 'POST') {
       return queueTerminalFreed.onRequestPost(context);
     }
+    if (pathname === '/api/queue/assignment-status' && method === 'GET') {
+      return queueAssignmentStatus.onRequestGet(context);
+    }
     if (pathname === '/api/queue/terminals') {
       if (method === 'GET') return queueTerminals.onRequestGet(context);
       if (method === 'POST') return queueTerminals.onRequestPost(context);
       if (method === 'DELETE') return queueTerminals.onRequestDelete(context);
+    }
+    if (pathname === '/api/queue/active-sales') {
+      if (method === 'GET') return queueActiveSales.onRequestGet(context);
+      if (method === 'POST') return queueActiveSales.onRequestPost(context);
+    }
+    const activeSaleIdMatch = pathname.match(/^\/api\/queue\/active-sales\/([^/]+)$/);
+    if (activeSaleIdMatch) {
+      context.params = { id: activeSaleIdMatch[1] };
+      if (method === 'PATCH') return queueActiveSalesById.onRequestPatch(context);
+      if (method === 'DELETE') return queueActiveSalesById.onRequestDelete(context);
     }
 
     if (pathname === '/api/orgs' && method === 'POST') {

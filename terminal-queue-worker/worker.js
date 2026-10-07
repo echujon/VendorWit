@@ -14,11 +14,27 @@ export class TerminalQueue {
     this.env = env;
     this.terminals = new Map(); // deviceId -> { name, status, queueId }
     this.queue = [];            // { id, clientId, cart, note, createdAt }
+    // Parallel to the above, purely additive: lets everyone at a location
+    // see every pending/in-progress sale, not just their own. The client
+    // reports its own lifecycle transitions here (it already tracks these
+    // locally in pendingSales - see js/app.js) rather than this being
+    // derived from `queue`/`terminals`, which only ever tracked "terminal
+    // busy", never "busy with what".
+    this.activeSales = new Map(); // saleId -> { clientId, cart, total, deviceId, checkoutId, status, createdAt }
+    // Durable record of "this queue entry got assigned to this device",
+    // kept even if the real-time WebSocket push to deliver that news
+    // fails (e.g. the client's socket briefly dropped) - without this, a
+    // missed push meant the client waited forever and the terminal stayed
+    // falsely "busy" forever, since nothing else would ever use it. A
+    // reconnecting client checks this via /assignment-status.
+    this.pendingAssignments = new Map(); // queueId -> { deviceId, name }
 
     this.ready = state.blockConcurrencyWhile(async () => {
-      const stored = await state.storage.get(['terminals', 'queue']);
+      const stored = await state.storage.get(['terminals', 'queue', 'activeSales', 'pendingAssignments']);
       if (stored.get('terminals')) this.terminals = new Map(stored.get('terminals'));
       if (stored.get('queue')) this.queue = stored.get('queue');
+      if (stored.get('activeSales')) this.activeSales = new Map(stored.get('activeSales'));
+      if (stored.get('pendingAssignments')) this.pendingAssignments = new Map(stored.get('pendingAssignments'));
     });
   }
 
@@ -37,6 +53,15 @@ export class TerminalQueue {
     if (pathname === '/terminal-status' && request.method === 'POST') return this.setTerminalStatus(request);
     if (pathname === '/my-status' && request.method === 'GET') return json(this.myStatus(url.searchParams.get('clientId')));
     if (pathname === '/clear-queue' && request.method === 'POST') return this.clearQueue();
+
+    if (pathname === '/assignment-status' && request.method === 'GET') {
+      return json(this.checkAssignment(url.searchParams.get('queueId')));
+    }
+    if (pathname === '/active-sales' && request.method === 'GET') return json(this.activeSaleList());
+    if (pathname === '/active-sales' && request.method === 'POST') return this.createActiveSale(request);
+    const activeSaleMatch = pathname.match(/^\/active-sales\/([^/]+)$/);
+    if (activeSaleMatch && request.method === 'PATCH') return this.updateActiveSale(activeSaleMatch[1], request);
+    if (activeSaleMatch && request.method === 'DELETE') return this.deleteActiveSale(activeSaleMatch[1]);
 
     return new Response('Not found', { status: 404 });
   }
@@ -202,7 +227,27 @@ export class TerminalQueue {
     terminal.status = 'busy';
     terminal.queueId = null;
     await this.persistQueue();
+    // Recorded BEFORE attempting the push, and independent of whether it
+    // succeeds - a reconnecting client can recover this via
+    // /assignment-status even if the live push never arrived.
+    this.pendingAssignments.set(next.id, { deviceId, name: terminal.name });
+    await this.persistPendingAssignments();
     this.sendTo(next.clientId, { type: 'assigned', deviceId, name: terminal.name, queueId: next.id });
+  }
+
+  async persistPendingAssignments() {
+    await this.state.storage.put('pendingAssignments', Array.from(this.pendingAssignments.entries()));
+  }
+
+  // Consumed once - a client that successfully recovers an assignment this
+  // way shouldn't be told about it again on a later reconnect.
+  async checkAssignment(queueId) {
+    if (!queueId) return { assigned: false };
+    const assignment = this.pendingAssignments.get(queueId);
+    if (!assignment) return { assigned: false };
+    this.pendingAssignments.delete(queueId);
+    await this.persistPendingAssignments();
+    return { assigned: true, ...assignment };
   }
 
   async clearQueue() {
@@ -220,8 +265,57 @@ export class TerminalQueue {
     return { status: 'unknown' };
   }
 
+  activeSaleList() {
+    return Array.from(this.activeSales.entries()).map(([saleId, s]) => ({ saleId, ...s }));
+  }
+
+  async persistActiveSales() {
+    await this.state.storage.put('activeSales', Array.from(this.activeSales.entries()));
+  }
+
+  async createActiveSale(request) {
+    const body = await request.json().catch(() => ({}));
+    const saleId = (body.saleId || '').trim();
+    const clientId = (body.clientId || '').trim();
+    if (!saleId || !clientId) return json({ error: 'saleId and clientId are required' }, 400);
+
+    this.activeSales.set(saleId, {
+      clientId,
+      cart: body.cart || null,
+      total: typeof body.total === 'number' ? body.total : 0,
+      deviceId: body.deviceId || null,
+      checkoutId: null,
+      status: body.status || 'queued',
+      createdAt: Date.now()
+    });
+    await this.persistActiveSales();
+    this.broadcastState();
+    return json({ ok: true });
+  }
+
+  async updateActiveSale(saleId, request) {
+    const sale = this.activeSales.get(saleId);
+    if (!sale) return json({ error: 'Not found' }, 404);
+
+    const body = await request.json().catch(() => ({}));
+    if (body.status) sale.status = body.status;
+    if (body.checkoutId) sale.checkoutId = body.checkoutId;
+    if (body.deviceId) sale.deviceId = body.deviceId;
+
+    await this.persistActiveSales();
+    this.broadcastState();
+    return json({ ok: true });
+  }
+
+  async deleteActiveSale(saleId) {
+    this.activeSales.delete(saleId);
+    await this.persistActiveSales();
+    this.broadcastState();
+    return json({ ok: true });
+  }
+
   snapshot() {
-    return { terminals: this.terminalList(), queueLength: this.queue.length };
+    return { terminals: this.terminalList(), queueLength: this.queue.length, activeSales: this.activeSaleList() };
   }
 
   sendTo(clientId, message) {

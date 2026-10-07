@@ -504,6 +504,34 @@ main { flex: 1; padding: 1.25rem; padding-bottom: 5rem; display: flex; flex-dire
 }
 #review-sale-summary { font-weight: 500; opacity: 0.9; }
 
+/* Header "Queue" button badge - count of active sales location-wide */
+.queue-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: white;
+  font-size: 0.65rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.queue-badge.hidden { display: none; }
+
+/* Shared Queue modal (#queue-modal) - reuses .pending-sale-row for each
+   entry; rows belonging to another device are dimmed slightly so your own
+   sales stand out. */
+#queue-modal-list { display: flex; flex-direction: column; gap: 0.5rem; width: 100%; }
+#queue-modal-list .pending-sale-row.other-device { opacity: 0.7; }
+#queue-modal-list .pending-sale-owner { font-size: 0.75rem; color: var(--muted); }
+#queue-modal-list .pending-sale-items { font-size: 0.8rem; color: var(--muted); margin-top: 0.15rem; }
+
 /* Settings page */
 .settings-body { padding: 1.25rem; display: flex; flex-direction: column; gap: 1.25rem; }
 
