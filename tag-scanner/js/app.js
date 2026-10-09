@@ -28,6 +28,7 @@ const fieldPrice = document.getElementById('field-price');
 const fieldQuantity = document.getElementById('field-quantity');
 const fieldLocation = document.getElementById('field-location');
 const ocrRaw = document.getElementById('ocr-raw');
+const ocrRawLabel = document.getElementById('ocr-raw-label');
 const ocrRawSelectable = document.getElementById('ocr-raw-selectable');
 const otherFieldsLabel = document.getElementById('other-fields-label');
 const otherFieldsDisplay = document.getElementById('other-fields-display');
@@ -36,15 +37,29 @@ const recordsList = document.getElementById('records-list');
 const scanOverlay = document.querySelector('.scan-overlay');
 const btnScanModeOcr = document.getElementById('btn-scan-mode-ocr');
 const btnScanModeImage = document.getElementById('btn-scan-mode-image');
+const btnScanModeBarcode = document.getElementById('btn-scan-mode-barcode');
 let scanMode = 'ocr';
+
+// Native BarcodeDetector is Android Chrome only today (iOS Safari ships it
+// disabled) - rather than offer a mode that silently fails there, the
+// button itself only appears when the API is actually present. A JS/WASM
+// decoder (e.g. ZXing) to cover iOS too is a later addition, not this one.
+if ('BarcodeDetector' in window) {
+  btnScanModeBarcode.classList.remove('hidden');
+}
 
 function setScanMode(mode) {
   scanMode = mode;
   btnScanModeOcr.classList.toggle('active', mode === 'ocr');
   btnScanModeImage.classList.toggle('active', mode === 'image');
+  btnScanModeBarcode.classList.toggle('active', mode === 'barcode');
+  if (cameraActive) {
+    if (mode === 'barcode') startBarcodeLoop(); else stopBarcodeLoop();
+  }
 }
 btnScanModeOcr.addEventListener('click', () => setScanMode('ocr'));
 btnScanModeImage.addEventListener('click', () => setScanMode('image'));
+btnScanModeBarcode.addEventListener('click', () => setScanMode('barcode'));
 const scanPlaceholder = document.querySelector('.scan-placeholder');
 
 // --- Buttons ---
@@ -110,12 +125,14 @@ async function startCamera() {
     btnCameraIcon.setAttribute('fill', 'currentColor');
     btnCameraLabel.textContent = 'Capture';
     cameraActive = true;
+    if (scanMode === 'barcode') startBarcodeLoop();
   } catch (err) {
     toast('Camera access denied', 'error');
   }
 }
 
 function stopCamera() {
+  stopBarcodeLoop();
   if (stream) {
     stream.getTracks().forEach(t => t.stop());
     stream = null;
@@ -130,7 +147,10 @@ function stopCamera() {
   cameraActive = false;
 }
 
-function captureFrame() {
+// Shared by the manual Capture tap (OCR/Image modes) and barcode auto-
+// detect (below) - grabs the current video frame as a still, shows it as
+// the frozen preview, and hands the blob to whichever processor is next.
+function snapshotVideoFrame(onBlob) {
   const canvas = document.createElement('canvas');
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
@@ -142,9 +162,69 @@ function captureFrame() {
     previewImg.classList.remove('hidden');
     video.classList.add('hidden');
     scanOverlay.style.display = 'none';
+    onBlob(blob);
+  }, 'image/jpeg', 0.92);
+}
+
+function captureFrame() {
+  snapshotVideoFrame(blob => {
     stopCamera();
     processImage(blob);
-  }, 'image/jpeg', 0.92);
+  });
+}
+
+// --- Barcode scanning (Android Chrome's native BarcodeDetector only for
+// now - see the 'BarcodeDetector' in window check above). Runs
+// continuously against the live preview instead of waiting for a manual
+// Capture tap, since a barcode is meant to be read the instant it's in
+// frame - matching how the rest of the queue/terminal work in this app
+// favors fast, low-friction flows over extra taps.
+let barcodeDetector = null;
+let barcodeLoopHandle = null;
+
+function startBarcodeLoop() {
+  if (!barcodeDetector) barcodeDetector = new BarcodeDetector();
+  stopBarcodeLoop();
+  barcodeLoopHandle = setInterval(async () => {
+    if (!cameraActive || video.readyState < 2) return;
+    let results;
+    try {
+      results = await barcodeDetector.detect(video);
+    } catch (err) {
+      console.warn('Barcode detect failed:', err);
+      return;
+    }
+    if (!results.length) return;
+    const rawValue = results[0].rawValue;
+    stopBarcodeLoop();
+    snapshotVideoFrame(() => {
+      stopCamera();
+      processBarcodeValue(rawValue);
+    });
+  }, 300);
+}
+
+function stopBarcodeLoop() {
+  if (barcodeLoopHandle) {
+    clearInterval(barcodeLoopHandle);
+    barcodeLoopHandle = null;
+  }
+}
+
+// A decoded barcode is a definitive ID - no OCR, and no appearance-based
+// fallback the way Image mode has, since there's nothing ambiguous left
+// to resolve once the code itself has been read correctly.
+async function processBarcodeValue(rawValue) {
+  hideAllResultCards();
+  lastRawText = rawValue;
+  showStatus('Looking up barcode...');
+  const match = await findByUniqueId(rawValue);
+  hideStatus();
+  if (match) {
+    showMatchCard(match, 'text');
+  } else {
+    showNoMatchCard(rawValue, 'barcode');
+  }
 }
 
 // --- File upload ---
@@ -291,7 +371,8 @@ function hideAllResultCards() {
   resultCard.classList.remove('visible');
 }
 
-function showNoMatchCard(rawText) {
+function showNoMatchCard(rawText, source = 'ocr') {
+  ocrRawLabel.textContent = source === 'barcode' ? 'Scanned barcode value' : 'Raw OCR text';
   ocrRaw.textContent = rawText;
   noMatchCard.classList.add('visible');
   noMatchCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -364,21 +445,36 @@ function showMatchCard(record, matchType = 'text', score = null) {
 // never find it.
 const TICKET_NO_RE = /^ticket\s*(no|number|#)\.?\s*[:#]?\s*(.*)$/i;
 
+// Different tag stock spells the same field differently ("Price" vs "Sale
+// Price", "Brand" vs "MFG") - add synonyms here as new wordings show up
+// rather than hardcoding a one-off rule per tag style. When more than one
+// synonym for the same field appears on one tag (e.g. both "Price" and
+// "Sale Price" printed as separate lines), whichever is read later wins -
+// there's only one price slot, not a priority order between synonyms.
 const KNOWN_FIELD_SYNONYMS = [
   { key: 'name', label: /^name$/i },
   { key: 'item', label: /^item$/i },
-  { key: 'brand', label: /^brand$/i },
+  { key: 'brand', label: /^(brand|mfg)$/i },
   { key: 'size', label: /^size$/i },
   { key: 'color', label: /^colou?r$/i },
-  { key: 'price', label: /^price\s*\$?$/i }
+  { key: 'price', label: /^(sale\s*)?price\s*\$?$/i }
 ];
 
 // $ has to be allowed in the label itself (e.g. "Price $:"), or a blank
 // field right before it would wrongly swallow it as its own value.
 const LABEL_LINE_RE = /^([A-Za-z][A-Za-z0-9 /#$]{0,30}?)\s*:\s*(.*)$/;
 
+// A known field's label can also appear alone on its own line with no
+// colon at all and its value on the next line ("SALE PRICE" / "MFG" on
+// their own line, the actual value typed below) - same shape as the
+// Ticket No. special case above, generalized to any known field instead
+// of being hand-rolled per label.
+function matchBareKnownLabel(line) {
+  return KNOWN_FIELD_SYNONYMS.find(f => f.label.test(line.trim()));
+}
+
 function isTagLabelLine(line) {
-  return LABEL_LINE_RE.test(line) || TICKET_NO_RE.test(line);
+  return LABEL_LINE_RE.test(line) || TICKET_NO_RE.test(line) || !!matchBareKnownLabel(line);
 }
 
 // Blank tag fields are often printed as a fill-in line ("Item: _______"),
@@ -416,6 +512,18 @@ function parseTicketTag(rawText = '') {
       continue;
     }
 
+    const bareKnown = !LABEL_LINE_RE.test(line) && matchBareKnownLabel(line);
+    if (bareKnown) {
+      consumed.add(i);
+      let value = '';
+      if (nextLine && !isTagLabelLine(nextLine)) { value = nextLine.trim(); consumed.add(i + 1); }
+      value = stripBlankFill(value);
+      fields[bareKnown.key] = bareKnown.key === 'price'
+        ? (value.match(/\d+(?:\.\d{1,2})?/) || [''])[0]
+        : value;
+      continue;
+    }
+
     const match = line.match(LABEL_LINE_RE);
     if (!match) continue;
     consumed.add(i);
@@ -444,17 +552,25 @@ function parseTicketTag(rawText = '') {
   // "Floating" text: a short alphanumeric line with no label attached to it
   // at all - not consumed as a label, a label's value, or a blank-fill
   // placeholder. Some tags print the ticket number again on its own like
-  // this. Only ever used to fill in a MISSING Ticket No. - if one was
-  // already found via its label, the floating text is ignored either way
-  // (whether it agrees or disagrees), since the labeled value is trusted.
+  // this; others print a barcode's human-readable number underneath it,
+  // which is the same shape (an unlabeled short line) as far as OCR text
+  // is concerned. Only ever used to fill in a MISSING Ticket No. - if one
+  // was already found via its label, the floating text is ignored either
+  // way (whether it agrees or disagrees), since the labeled value is trusted.
   if (!fields.uniqueId) {
-    const floatingLine = lines.find((line, i) =>
+    const floatingCandidates = lines.filter((line, i) =>
       !consumed.has(i) &&
       !isTagLabelLine(line) &&
       !BARE_LABEL_WORDS.test(line) &&
       !/^_+$/.test(line) &&
       /^[A-Za-z0-9](?:[A-Za-z0-9 -]{0,13}[A-Za-z0-9])?$/.test(line)
     );
+    // Prefer an all-digit candidate (a barcode number or a bare repeated
+    // ticket number) over one containing letters (e.g. a stray title/
+    // heading that happens to be short enough to match) - digits-only is
+    // a much stronger signal of "this is an ID" than just "short and
+    // unlabeled". Falls back to the first candidate of any kind otherwise.
+    const floatingLine = floatingCandidates.find(line => /^[0-9 -]+$/.test(line)) || floatingCandidates[0];
     if (floatingLine) {
       fields.uniqueId = floatingLine.replace(/[^A-Za-z0-9]/g, '');
     }

@@ -64,6 +64,7 @@
       <div class="scan-mode-toggle" role="group" aria-label="Scan mode">
         <button type="button" class="scan-mode-btn active" id="btn-scan-mode-ocr" data-mode="ocr">OCR</button>
         <button type="button" class="scan-mode-btn" id="btn-scan-mode-image" data-mode="image">Image</button>
+        <button type="button" class="scan-mode-btn hidden" id="btn-scan-mode-barcode" data-mode="barcode">Barcode</button>
       </div>
     </div>
 
@@ -78,7 +79,7 @@
     <!-- OCR result: no match yet -->
     <div id="no-match-card">
       <h2>Scanned Text</h2>
-      <div class="ocr-raw-label">Raw OCR text</div>
+      <div class="ocr-raw-label" id="ocr-raw-label">Raw OCR text</div>
       <div class="ocr-raw" id="ocr-raw"></div>
       <div class="result-actions">
         <button class="btn btn-primary" id="btn-new-item">+ New Item</button>
