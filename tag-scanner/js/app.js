@@ -1,4 +1,4 @@
-import { getRecords, getCachedRecords, saveRecord, updateRecord, deleteRecord, exportCSV, getSettings, getClientId, getLocationCode, findByUniqueId, findByVisualMatch } from './storage.js';
+import { getRecords, getCachedRecords, saveRecord, updateRecord, deleteRecord, exportCSV, getSettings, getClientId, getLocationCode, findByUniqueId, findByVisualMatch, createSale, getSales } from './storage.js';
 import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0/+esm';
 import QRCode from 'https://cdn.jsdelivr.net/npm/qrcode@1.5.4/+esm';
 
@@ -24,6 +24,7 @@ const fieldItem = document.getElementById('field-item');
 const fieldBrand = document.getElementById('field-brand');
 const fieldSize = document.getElementById('field-size');
 const fieldColor = document.getElementById('field-color');
+const fieldTagColor = document.getElementById('field-tag-color');
 const fieldPrice = document.getElementById('field-price');
 const fieldQuantity = document.getElementById('field-quantity');
 const fieldLocation = document.getElementById('field-location');
@@ -197,9 +198,9 @@ function startBarcodeLoop() {
     if (!results.length) return;
     const rawValue = results[0].rawValue;
     stopBarcodeLoop();
-    snapshotVideoFrame(() => {
+    snapshotVideoFrame(blob => {
       stopCamera();
-      processBarcodeValue(rawValue);
+      processBarcodeValue(rawValue, blob);
     });
   }, 300);
 }
@@ -211,20 +212,37 @@ function stopBarcodeLoop() {
   }
 }
 
-// A decoded barcode is a definitive ID - no OCR, and no appearance-based
-// fallback the way Image mode has, since there's nothing ambiguous left
-// to resolve once the code itself has been read correctly.
-async function processBarcodeValue(rawValue) {
+// A decoded barcode is a definitive ID, so it's checked against existing
+// records first with no OCR involved. On a miss, though, a barcode alone
+// only gives an ID - it can't tell us the price, brand, or anything else
+// printed on the tag. So OCR still runs on that same frame to fill in
+// everything else for the New Item form, with the decoded barcode value
+// always overriding whatever OCR guesses for the ID - a successful
+// decode is far more reliable than OCR's floating-text guess.
+async function processBarcodeValue(rawValue, blob) {
   hideAllResultCards();
-  lastRawText = rawValue;
   showStatus('Looking up barcode...');
   const match = await findByUniqueId(rawValue);
-  hideStatus();
   if (match) {
+    hideStatus();
+    lastRawText = rawValue;
+    lastBarcodeValue = '';
     showMatchCard(match, 'text');
-  } else {
-    showNoMatchCard(rawValue, 'barcode');
+    return;
   }
+
+  showStatus('Running OCR...');
+  let rawText = '';
+  try {
+    rawText = await runOCR(blob);
+  } catch (err) {
+    console.warn('OCR failed:', err);
+  }
+  hideStatus();
+
+  lastRawText = rawText;
+  lastBarcodeValue = rawValue;
+  showNoMatchCard(rawText ? `${rawText}\n\nBarcode: ${rawValue}` : `Barcode: ${rawValue}`, 'barcode');
 }
 
 // --- File upload ---
@@ -308,9 +326,14 @@ async function loadFile(file) {
 
 // --- OCR + AI ---
 let lastRawText = '';
+// Set only by processBarcodeValue on a no-match, cleared by every other
+// scan/reset path - lets "+ New Item" know to use the decoded barcode as
+// the uniqueId instead of whatever OCR guessed from the same frame.
+let lastBarcodeValue = '';
 
 async function processImage(blob) {
   hideAllResultCards();
+  lastBarcodeValue = '';
 
   const skipOcr = scanMode === 'image';
   let rawText = '';
@@ -372,7 +395,7 @@ function hideAllResultCards() {
 }
 
 function showNoMatchCard(rawText, source = 'ocr') {
-  ocrRawLabel.textContent = source === 'barcode' ? 'Scanned barcode value' : 'Raw OCR text';
+  ocrRawLabel.textContent = source === 'barcode' ? 'Scanned barcode + OCR text' : 'Raw OCR text';
   ocrRaw.textContent = rawText;
   noMatchCard.classList.add('visible');
   noMatchCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -387,6 +410,7 @@ function showMatchCard(record, matchType = 'text', score = null) {
   document.getElementById('match-brand').textContent = record.brand || '—';
   document.getElementById('match-size').textContent = record.size || '—';
   document.getElementById('match-color').textContent = record.color || '—';
+  document.getElementById('match-tagColor').textContent = record.tagColor || '—';
   document.getElementById('match-price').textContent = record.price ? `$${record.price}` : '—';
   document.getElementById('match-quantity').textContent = record.quantity || '—';
   document.getElementById('match-location').textContent = record.location || '—';
@@ -699,12 +723,23 @@ function showNewItemForm(rawText, prefill = {}) {
   fieldBrand.value = parsed.brand || prefill.brand || '';
   fieldSize.value = parsed.size || prefill.size || '';
   fieldColor.value = parsed.color || prefill.color || '';
+  fieldTagColor.value = prefill.tagColor || '';
   fieldPrice.value = parsed.price || prefill.price || '';
   fieldQuantity.value = parsed.quantity || prefill.quantity || '';
   fieldLocation.value = parsed.location || prefill.location || '';
   lastOtherFields = parsed.otherFields || prefill.otherFields || {};
   renderOtherFields(lastOtherFields, otherFieldsLabel, otherFieldsDisplay);
   resultCard.dataset.editId = prefill.id || '';
+
+  // Fill in the tag color from the just-captured photo so staff can see
+  // and correct it before Save, rather than it being silently baked in
+  // afterward - only when there's a fresh photo and nothing typed/saved
+  // there already (editing an existing record keeps its saved value).
+  if (capturedBlob && !fieldTagColor.value) {
+    detectTagColor(capturedBlob).then(detected => {
+      if (detected && !fieldTagColor.value) fieldTagColor.value = detected;
+    }).catch(() => {});
+  }
   hideAllResultCards();
   resultCard.classList.add('visible');
   resultCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -939,6 +974,82 @@ function resizeImageToDataUrl(blob, maxDim = 256, quality = 0.7) {
   });
 }
 
+// --- Tag color detection ---
+// Identifies which vendor a sale belongs to by the color of the physical
+// tag/label (not the item's own color - that's the separate `color`
+// field from OCR). Pure pixel-color math on the captured frame, no ML
+// model or API call - downsamples the photo, buckets each non-grayscale
+// pixel into the nearest named hue, and returns whichever bucket has the
+// most votes. Near-white/black/gray pixels (printed text, paper
+// highlights/shadows) are excluded since they're not the tag's color.
+const TAG_COLOR_PALETTE = [
+  { name: 'red', hue: 0 },
+  { name: 'orange', hue: 30 },
+  { name: 'yellow', hue: 55 },
+  { name: 'green', hue: 120 },
+  { name: 'teal', hue: 175 },
+  { name: 'blue', hue: 220 },
+  { name: 'purple', hue: 275 },
+  { name: 'pink', hue: 320 }
+];
+
+function nearestTagColor(hue) {
+  let best = TAG_COLOR_PALETTE[0];
+  let bestDist = Infinity;
+  for (const candidate of TAG_COLOR_PALETTE) {
+    const dist = Math.min(Math.abs(hue - candidate.hue), 360 - Math.abs(hue - candidate.hue));
+    if (dist < bestDist) { bestDist = dist; best = candidate; }
+  }
+  return best.name;
+}
+
+async function detectTagColor(blob) {
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const el = new Image();
+      const url = URL.createObjectURL(blob);
+      el.onload = () => { URL.revokeObjectURL(url); resolve(el); };
+      el.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Failed to load image')); };
+      el.src = url;
+    });
+
+    const size = 40;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, size, size);
+    const { data } = ctx.getImageData(0, 0, size, size);
+
+    const votes = new Array(TAG_COLOR_PALETTE.length).fill(0);
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      const max = Math.max(r, g, b), min = Math.min(r, g, b);
+      const value = max / 255;
+      const saturation = max === 0 ? 0 : (max - min) / max;
+      if (saturation < 0.25 || value < 0.2 || value > 0.97) continue;
+
+      let hue;
+      if (max === min) hue = 0;
+      else if (max === r) hue = 60 * (((g - b) / (max - min)) % 6);
+      else if (max === g) hue = 60 * (((b - r) / (max - min)) + 2);
+      else hue = 60 * (((r - g) / (max - min)) + 4);
+      if (hue < 0) hue += 360;
+
+      const idx = TAG_COLOR_PALETTE.findIndex(c => c.name === nearestTagColor(hue));
+      votes[idx]++;
+    }
+
+    const total = votes.reduce((sum, v) => sum + v, 0);
+    if (total < 10) return ''; // not enough colorful pixels to be confident
+    const bestIdx = votes.indexOf(Math.max(...votes));
+    return TAG_COLOR_PALETTE[bestIdx].name;
+  } catch (err) {
+    console.warn('Tag color detection failed:', err);
+    return '';
+  }
+}
+
 // --- Stripe ---
 async function pushToStripe(record) {
   const { stripeKey } = getSettings();
@@ -1052,11 +1163,17 @@ function buildVenmoLink(record) {
 
 // --- No-match card actions ---
 btnNewItem.addEventListener('click', () => {
-  showNewItemForm(lastRawText);
+  if (lastBarcodeValue) {
+    const parsed = parseTicketTag(lastRawText) || parseScannedText(lastRawText) || {};
+    showNewItemForm(lastRawText, { ...parsed, uniqueId: lastBarcodeValue });
+  } else {
+    showNewItemForm(lastRawText);
+  }
 });
 
 const btnManualEntry = document.getElementById('btn-manual-entry');
 btnManualEntry.addEventListener('click', () => {
+  lastBarcodeValue = '';
   showNewItemForm('');
 });
 
@@ -1132,6 +1249,7 @@ function collectFormData() {
     brand: fieldBrand.value.trim(),
     size: fieldSize.value.trim(),
     color: fieldColor.value.trim(),
+    tagColor: fieldTagColor.value.trim(),
     price: fieldPrice.value.trim(),
     quantity: fieldQuantity.value.trim(),
     location: fieldLocation.value.trim(),
@@ -1139,22 +1257,29 @@ function collectFormData() {
   };
 }
 
-// Attaches a reference photo + appearance embeddings to a new/edited record,
-// captured from whatever photo is currently loaded (capturedBlob) — this is
-// the "photograph it once when adding to inventory" step for untagged items.
+// Attaches a reference photo to a new/edited record, captured from
+// whatever photo is currently loaded (capturedBlob) - this is the
+// "photograph it once when adding to inventory" step for untagged items.
+// Tag color is detected and filled into the form earlier, in
+// showNewItemForm, so staff can see/correct it before Save - by the time
+// this runs, fieldTagColor (already collected into data.tagColor) is
+// whatever was actually on screen when Save was clicked.
+//
+// Appearance embeddings (CLIP/Gemini) are paused for now - not needed for
+// the current demo, and every OCR/barcode item already carries a
+// reliable uniqueId that's matched first anyway, so the embeddings were
+// pure overhead (a Gemini round-trip + loading a 50MB on-device model on
+// every save) for a comparison path that was never actually reached. The
+// embedding/matching code itself (embedImage, findByVisualMatch, Image
+// scan mode) is untouched and still there to re-enable later.
 async function attachVisualData(data) {
   if (!capturedBlob) return data;
-  showStatus('Analyzing photo...');
-  const [photoDataUrl, embeddings] = await Promise.all([
-    resizeImageToDataUrl(capturedBlob).catch(() => null),
-    embedImage(capturedBlob)
-  ]);
+  showStatus('Processing photo...');
+  const photoDataUrl = await resizeImageToDataUrl(capturedBlob).catch(() => null);
   hideStatus();
   return {
     ...data,
-    photoDataUrl: photoDataUrl || data.photoDataUrl,
-    embeddingGemini: embeddings.gemini || data.embeddingGemini,
-    embeddingClip: embeddings.clip || data.embeddingClip
+    photoDataUrl: photoDataUrl || data.photoDataUrl
   };
 }
 
@@ -1223,6 +1348,7 @@ function resetScanArea() {
   hideAllResultCards();
   matchedRecord = null;
   capturedBlob = null;
+  lastBarcodeValue = '';
   previewImg.classList.add('hidden');
   scanPlaceholder.style.display = 'flex';
 }
@@ -1238,7 +1364,7 @@ async function renderRecords() {
     <div class="record-item" data-id="${r.id}">
       <div class="record-info">
         <div class="record-name">${esc(r.item || r.name || '(no name)')}</div>
-        <div class="record-meta">${esc(r.uniqueId || '')}${r.uniqueId ? ' · ' : ''}${r.quantity ? `Qty ${esc(r.quantity)} · ` : ''}${esc(r.location || '')}${r.location ? ' · ' : ''}${new Date(r.createdAt).toLocaleDateString()} ${r.sentToStripe ? '· In Stripe' : ''}</div>
+        <div class="record-meta">${esc(r.uniqueId || '')}${r.uniqueId ? ' · ' : ''}${r.tagColor ? `${esc(r.tagColor)} tag · ` : ''}${r.quantity ? `Qty ${esc(r.quantity)} · ` : ''}${esc(r.location || '')}${r.location ? ' · ' : ''}${new Date(r.createdAt).toLocaleDateString()} ${r.sentToStripe ? '· In Stripe' : ''}</div>
       </div>
       <div class="record-price">$${esc(r.price || '—')}</div>
       <div class="record-actions">
@@ -1254,6 +1380,7 @@ function viewRecord(id) {
   if (!record) return;
   hideAllResultCards();
   lastRawText = '';
+  lastBarcodeValue = '';
   showMatchCard(record, 'saved');
 }
 
@@ -1401,8 +1528,26 @@ async function decrementInventoryForItems(items) {
   await renderRecords();
 }
 
-async function completeSale() {
-  await decrementInventoryForItems(cart);
+// The one place every completed-sale path (Cash, Venmo, Square Terminal
+// card) funnels through - decrements inventory the same way they always
+// did, and now also writes a durable sales record (timestamp, items,
+// total, payment method) for the Sales Report. If the network write
+// fails, the sale still isn't lost from the customer's perspective
+// (inventory already moved) - it just won't show up in the report, which
+// is surfaced as a toast rather than blocking the sale.
+async function recordSale(items, total, paymentMethod) {
+  await decrementInventoryForItems(items);
+  try {
+    await createSale({ items, total: total.toFixed(2), paymentMethod });
+  } catch (err) {
+    console.warn('Failed to record sale for reporting:', err);
+    toast('Sale completed, but failed to log it for reporting', 'error');
+  }
+}
+
+async function completeSale(paymentMethod) {
+  const total = cart.reduce((sum, item) => sum + parseFloat(item.price) * item.quantity, 0);
+  await recordSale(cart, total, paymentMethod);
   cart = [];
   renderCart();
   toast('Sale complete!', 'success');
@@ -1514,6 +1659,104 @@ function closeQueueModal() {
 
 btnOpenQueue.addEventListener('click', openQueueModal);
 btnQueueModalClose.addEventListener('click', closeQueueModal);
+
+// --- Sales Report ---
+const btnSalesReport = document.getElementById('btn-sales-report');
+const salesReportModal = document.getElementById('sales-report-modal');
+const btnSalesReportModalClose = document.getElementById('btn-sales-report-modal-close');
+const salesReportSummary = document.getElementById('sales-report-summary');
+const salesReportList = document.getElementById('sales-report-list');
+const btnSalesReportExport = document.getElementById('btn-sales-report-export');
+let lastSalesReport = [];
+
+const PAYMENT_METHOD_LABELS = { cash: 'Cash', venmo: 'Venmo', card: 'Card (Terminal)' };
+
+function paymentMethodLabel(method) {
+  return PAYMENT_METHOD_LABELS[method] || method;
+}
+
+function renderSalesReport(sales) {
+  const totalsByMethod = {};
+  let grandTotal = 0;
+  for (const sale of sales) {
+    const amount = parseFloat(sale.total) || 0;
+    grandTotal += amount;
+    totalsByMethod[sale.paymentMethod] = (totalsByMethod[sale.paymentMethod] || 0) + amount;
+  }
+
+  const methodBreakdown = Object.entries(totalsByMethod)
+    .map(([method, amount]) => `${paymentMethodLabel(method)}: $${amount.toFixed(2)}`)
+    .join(' · ');
+  salesReportSummary.innerHTML = `
+    <div class="sales-report-grand-total">${sales.length} sale${sales.length === 1 ? '' : 's'} · $${grandTotal.toFixed(2)}</div>
+    ${methodBreakdown ? `<div class="sales-report-breakdown">${esc(methodBreakdown)}</div>` : ''}
+  `;
+
+  if (!sales.length) {
+    salesReportList.innerHTML = '<div class="empty-state">No sales recorded yet.</div>';
+    return;
+  }
+
+  salesReportList.innerHTML = sales.map(sale => {
+    const itemsSummary = sale.items.map(item => `${item.quantity}x ${item.name || '(no name)'}`).join(', ');
+    return `
+    <div class="pending-sale-row">
+      <div class="pending-sale-info">
+        <span class="pending-sale-total">$${parseFloat(sale.total).toFixed(2)}</span>
+        · <span class="pending-sale-status">${esc(paymentMethodLabel(sale.paymentMethod))}</span>
+        · <span class="pending-sale-status">${new Date(sale.createdAt).toLocaleString()}</span>
+        ${itemsSummary ? `<div class="pending-sale-items">${esc(itemsSummary)}</div>` : ''}
+      </div>
+    </div>
+  `;
+  }).join('');
+}
+
+async function openSalesReportModal() {
+  salesReportModal.classList.remove('hidden');
+  salesReportSummary.textContent = '';
+  salesReportList.innerHTML = '<div class="empty-state">Loading...</div>';
+  try {
+    lastSalesReport = await getSales();
+  } catch (err) {
+    salesReportList.innerHTML = '<div class="empty-state">Failed to load sales.</div>';
+    return;
+  }
+  renderSalesReport(lastSalesReport);
+}
+
+function closeSalesReportModal() {
+  salesReportModal.classList.add('hidden');
+}
+
+function exportSalesCSV(sales) {
+  const rows = [['Timestamp', 'Items', 'Total', 'Payment Method']];
+  sales.forEach(sale => {
+    const itemsSummary = sale.items.map(item => `${item.quantity}x ${item.name || '(no name)'}`).join('; ');
+    rows.push([
+      sale.createdAt || '',
+      `"${itemsSummary.replace(/"/g, '""')}"`,
+      sale.total || '',
+      paymentMethodLabel(sale.paymentMethod)
+    ]);
+  });
+  const csv = rows.map(r => r.join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `sales-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+btnSalesReport.addEventListener('click', openSalesReportModal);
+btnSalesReportModalClose.addEventListener('click', closeSalesReportModal);
+btnSalesReportExport.addEventListener('click', () => {
+  if (!lastSalesReport.length) { toast('No sales to export', 'error'); return; }
+  exportSalesCSV(lastSalesReport);
+  toast('CSV downloaded', 'success');
+});
 
 // Client-driven fallback for freeing a terminal: the server-side paths
 // (webhook, status-poll) assume Square echoes device_options.device_id back
@@ -1709,7 +1952,7 @@ async function pollPendingSale(saleId, attemptsLeft) {
 
     if (data.status === 'COMPLETED') {
       notifyTerminalFreedClientSide(sale.deviceId);
-      await decrementInventoryForItems(sale.items);
+      await recordSale(sale.items, sale.total, 'card');
       toast('Sale complete!', 'success');
       removePendingSale(saleId);
       return;
@@ -1810,7 +2053,7 @@ btnReviewSquare.addEventListener('click', () => {
 btnReviewComplete.addEventListener('click', () => {
   if (!cart.length) return;
   closeReviewModal();
-  completeSale();
+  completeSale('cash');
 });
 
 btnReviewClear.addEventListener('click', () => {
@@ -1834,7 +2077,7 @@ btnVenmoModalEdit.addEventListener('click', () => {
 
 btnVenmoModalSuccess.addEventListener('click', () => {
   closeVenmoModal();
-  completeSale();
+  completeSale('venmo');
 });
 
 // --- Event listeners ---

@@ -11,6 +11,7 @@ export function rowToRecord(row) {
     brand: row.brand || '',
     size: row.size || '',
     color: row.color || '',
+    tagColor: row.tag_color || '',
     price: row.price || '',
     quantity: row.quantity || '',
     location: row.bin_location || '',

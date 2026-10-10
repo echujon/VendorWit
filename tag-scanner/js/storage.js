@@ -73,6 +73,19 @@ export async function deleteRecord(id) {
   return recordsCache;
 }
 
+// Completed sales (Cash, Venmo, Square Terminal card) - see
+// tag-scanner/functions/api/sales.js. Recorded once, at the moment a sale
+// actually finishes; this is read-mostly data for the Sales Report, so no
+// in-memory cache is kept the way getRecords() has - the report always
+// asks for the current list.
+export async function createSale(sale) {
+  return apiFetch('/api/sales', { method: 'POST', body: JSON.stringify(sale) });
+}
+
+export async function getSales() {
+  return apiFetch('/api/sales');
+}
+
 export async function findByUniqueId(ocrText) {
   const text = (ocrText || '').toString().trim();
   if (!text) return null;
@@ -117,7 +130,7 @@ export async function findByVisualMatch(queryEmbedding, source) {
 }
 
 export function exportCSV(records) {
-  const rows = [['Unique ID', 'Name', 'Item', 'Brand', 'Size', 'Color', 'Price', 'Quantity', 'Location', 'Other Fields', 'Stripe ID', 'Date']];
+  const rows = [['Unique ID', 'Name', 'Item', 'Brand', 'Size', 'Color', 'Tag Color', 'Price', 'Quantity', 'Location', 'Other Fields', 'Stripe ID', 'Date']];
   records.forEach(r => {
     const otherFields = Object.entries(r.otherFields || {}).map(([k, v]) => `${k}: ${v}`).join('; ');
     rows.push([
@@ -127,6 +140,7 @@ export function exportCSV(records) {
       `"${(r.brand || '').replace(/"/g, '""')}"`,
       `"${(r.size || '').replace(/"/g, '""')}"`,
       `"${(r.color || '').replace(/"/g, '""')}"`,
+      `"${(r.tagColor || '').replace(/"/g, '""')}"`,
       r.price || '',
       r.quantity || '',
       `"${(r.location || '').replace(/"/g, '""')}"`,

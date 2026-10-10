@@ -532,6 +532,14 @@ main { flex: 1; padding: 1.25rem; padding-bottom: 5rem; display: flex; flex-dire
 #queue-modal-list .pending-sale-owner { font-size: 0.75rem; color: var(--muted); }
 #queue-modal-list .pending-sale-items { font-size: 0.8rem; color: var(--muted); margin-top: 0.15rem; }
 
+/* Sales Report modal (#sales-report-modal) - reuses .pending-sale-row for
+   each sale, same as the Queue modal above. */
+#sales-report-list { display: flex; flex-direction: column; gap: 0.5rem; width: 100%; }
+#sales-report-list .pending-sale-items { font-size: 0.8rem; color: var(--muted); margin-top: 0.15rem; }
+.sales-report-summary { margin-bottom: 0.75rem; }
+.sales-report-grand-total { font-weight: 700; font-size: 1.1rem; }
+.sales-report-breakdown { font-size: 0.85rem; color: var(--muted); margin-top: 0.15rem; }
+
 /* Settings page */
 .settings-body { padding: 1.25rem; display: flex; flex-direction: column; gap: 1.25rem; }
 

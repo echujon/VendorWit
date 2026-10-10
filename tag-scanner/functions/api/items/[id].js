@@ -10,7 +10,7 @@ import { rowToRecord } from '../../_shared/items.js';
 
 const COLUMN_BY_FIELD = {
   uniqueId: 'unique_id', name: 'name', item: 'item', brand: 'brand', size: 'size',
-  color: 'color', price: 'price', quantity: 'quantity', location: 'bin_location',
+  color: 'color', tagColor: 'tag_color', price: 'price', quantity: 'quantity', location: 'bin_location',
   stripeId: 'stripe_id', priceId: 'price_id', sentToStripe: 'sent_to_stripe',
   photoDataUrl: 'photo_data_url'
 };

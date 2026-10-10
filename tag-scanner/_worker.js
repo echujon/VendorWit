@@ -29,6 +29,7 @@ import * as debugSquare from './functions/api/debug-square.js';
 import * as orgs from './functions/api/orgs.js';
 import * as items from './functions/api/items.js';
 import * as itemsById from './functions/api/items/[id].js';
+import * as sales from './functions/api/sales.js';
 import * as squareOauthStart from './functions/api/square/oauth/start.js';
 import * as squareOauthCallback from './functions/api/square/oauth/callback.js';
 import * as squareConnection from './functions/api/square/connection.js';
@@ -115,6 +116,10 @@ export default {
       context.params = { id: itemIdMatch[1] };
       if (method === 'PATCH') return itemsById.onRequestPatch(context);
       if (method === 'DELETE') return itemsById.onRequestDelete(context);
+    }
+    if (pathname === '/api/sales') {
+      if (method === 'GET') return sales.onRequestGet(context);
+      if (method === 'POST') return sales.onRequestPost(context);
     }
 
     if (pathname === '/api/square/oauth/start' && method === 'GET') {
