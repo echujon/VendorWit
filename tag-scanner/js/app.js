@@ -42,13 +42,12 @@ const btnScanModeImage = document.getElementById('btn-scan-mode-image');
 const btnScanModeBarcode = document.getElementById('btn-scan-mode-barcode');
 let scanMode = 'ocr';
 
-// Native BarcodeDetector is Android Chrome only today (iOS Safari ships it
-// disabled) - rather than offer a mode that silently fails there, the
-// button itself only appears when the API is actually present. A JS/WASM
-// decoder (e.g. ZXing) to cover iOS too is a later addition, not this one.
-if ('BarcodeDetector' in window) {
-  btnScanModeBarcode.classList.remove('hidden');
-}
+// Native BarcodeDetector only exists on Chrome/Android today - iOS Safari
+// ships it disabled. Rather than gate the Barcode button on that (which
+// would hide it entirely on iPhone/iPad), it's always shown; the
+// detection loop below picks native when available and falls back to the
+// ZXing-js library (lazy-loaded, see getZxingReader) everywhere else.
+btnScanModeBarcode.classList.remove('hidden');
 
 function setScanMode(mode) {
   scanMode = mode;
@@ -175,18 +174,35 @@ function captureFrame() {
   });
 }
 
-// --- Barcode scanning (Android Chrome's native BarcodeDetector only for
-// now - see the 'BarcodeDetector' in window check above). Runs
-// continuously against the live preview instead of waiting for a manual
-// Capture tap, since a barcode is meant to be read the instant it's in
-// frame - matching how the rest of the queue/terminal work in this app
-// favors fast, low-friction flows over extra taps.
+// --- Barcode scanning ---
+// Runs continuously against the live preview instead of waiting for a
+// manual Capture tap, since a barcode is meant to be read the instant
+// it's in frame - matching how the rest of the queue/terminal work in
+// this app favors fast, low-friction flows over extra taps.
+//
+// Two engines, picked automatically:
+// - Native BarcodeDetector - fast, built into the browser, but only
+//   Chrome/Android ships it enabled today.
+// - ZXing-js (lazy-loaded from a CDN, only when actually needed) - pure
+//   JS, works everywhere including Safari/iOS, so this is what covers
+//   iPhone/iPad. Slower per-frame than the native API, which is fine
+//   here since it's still just scanning a live preview, not blocking
+//   anything.
 let barcodeDetector = null;
 let barcodeLoopHandle = null;
+let zxingReader = null;
+let zxingScanning = false;
 
-function startBarcodeLoop() {
-  if (!barcodeDetector) barcodeDetector = new BarcodeDetector();
+function onBarcodeDetected(rawValue) {
   stopBarcodeLoop();
+  snapshotVideoFrame(blob => {
+    stopCamera();
+    processBarcodeValue(rawValue, blob);
+  });
+}
+
+function startNativeBarcodeLoop() {
+  if (!barcodeDetector) barcodeDetector = new BarcodeDetector();
   barcodeLoopHandle = setInterval(async () => {
     if (!cameraActive || video.readyState < 2) return;
     let results;
@@ -196,20 +212,65 @@ function startBarcodeLoop() {
       console.warn('Barcode detect failed:', err);
       return;
     }
-    if (!results.length) return;
-    const rawValue = results[0].rawValue;
-    stopBarcodeLoop();
-    snapshotVideoFrame(blob => {
-      stopCamera();
-      processBarcodeValue(rawValue, blob);
-    });
+    if (results.length) onBarcodeDetected(results[0].rawValue);
   }, 300);
+}
+
+async function getZxingReader() {
+  if (!zxingReader) {
+    const { BrowserMultiFormatReader } = await import('https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/+esm');
+    zxingReader = new BrowserMultiFormatReader();
+  }
+  return zxingReader;
+}
+
+async function startZxingBarcodeLoop() {
+  zxingScanning = true;
+  let reader;
+  try {
+    reader = await getZxingReader();
+  } catch (err) {
+    console.warn('Failed to load barcode scanning library:', err);
+    toast('Could not load barcode scanner', 'error');
+    return;
+  }
+  // The camera/video element is already running (startCamera) - this
+  // decodes against that existing stream rather than letting ZXing
+  // request its own, so Capture/Camera state here stays the single
+  // source of truth for who owns the stream.
+  if (!zxingScanning || !cameraActive) return; // stopped while the library was loading
+  try {
+    reader.decodeFromVideoElement(video, (result, err) => {
+      if (result) onBarcodeDetected(result.getText());
+      // err is a routine "nothing found in this frame" on almost every
+      // call - that's normal for continuous scanning, not a real failure.
+    }).catch(err => {
+      if (zxingScanning) console.warn('ZXing decode failed:', err);
+    });
+  } catch (err) {
+    console.warn('ZXing API not available as expected:', err);
+    toast('Barcode scanning is not available on this browser - try OCR instead, or add the item manually', 'error');
+    zxingScanning = false;
+  }
+}
+
+function startBarcodeLoop() {
+  stopBarcodeLoop();
+  if ('BarcodeDetector' in window) {
+    startNativeBarcodeLoop();
+  } else {
+    startZxingBarcodeLoop();
+  }
 }
 
 function stopBarcodeLoop() {
   if (barcodeLoopHandle) {
     clearInterval(barcodeLoopHandle);
     barcodeLoopHandle = null;
+  }
+  if (zxingScanning) {
+    zxingScanning = false;
+    zxingReader?.reset();
   }
 }
 
