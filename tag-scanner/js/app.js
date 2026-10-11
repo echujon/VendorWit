@@ -7,7 +7,7 @@ let stream = null;
 let capturedBlob = null;
 let cameraActive = false;
 let matchedRecord = null;
-let cart = []; // { id, name, price, quantity } — quantity here is units being sold, not inventory
+let cart = []; // { id, name, price, quantity, subVendor } — quantity here is units being sold, not inventory
 
 // --- DOM ---
 const video = document.getElementById('video');
@@ -25,6 +25,7 @@ const fieldBrand = document.getElementById('field-brand');
 const fieldSize = document.getElementById('field-size');
 const fieldColor = document.getElementById('field-color');
 const fieldTagColor = document.getElementById('field-tag-color');
+const fieldSubVendor = document.getElementById('field-sub-vendor');
 const fieldPrice = document.getElementById('field-price');
 const fieldQuantity = document.getElementById('field-quantity');
 const fieldLocation = document.getElementById('field-location');
@@ -411,6 +412,7 @@ function showMatchCard(record, matchType = 'text', score = null) {
   document.getElementById('match-size').textContent = record.size || '—';
   document.getElementById('match-color').textContent = record.color || '—';
   document.getElementById('match-tagColor').textContent = record.tagColor || '—';
+  document.getElementById('match-subVendor').textContent = record.subVendor || '—';
   document.getElementById('match-price').textContent = record.price ? `$${record.price}` : '—';
   document.getElementById('match-quantity').textContent = record.quantity || '—';
   document.getElementById('match-location').textContent = record.location || '—';
@@ -724,6 +726,7 @@ function showNewItemForm(rawText, prefill = {}) {
   fieldSize.value = parsed.size || prefill.size || '';
   fieldColor.value = parsed.color || prefill.color || '';
   fieldTagColor.value = prefill.tagColor || '';
+  fieldSubVendor.value = prefill.subVendor || '';
   fieldPrice.value = parsed.price || prefill.price || '';
   fieldQuantity.value = parsed.quantity || prefill.quantity || '';
   fieldLocation.value = parsed.location || prefill.location || '';
@@ -1250,6 +1253,7 @@ function collectFormData() {
     size: fieldSize.value.trim(),
     color: fieldColor.value.trim(),
     tagColor: fieldTagColor.value.trim(),
+    subVendor: fieldSubVendor.value.trim(),
     price: fieldPrice.value.trim(),
     quantity: fieldQuantity.value.trim(),
     location: fieldLocation.value.trim(),
@@ -1364,7 +1368,7 @@ async function renderRecords() {
     <div class="record-item" data-id="${r.id}">
       <div class="record-info">
         <div class="record-name">${esc(r.item || r.name || '(no name)')}</div>
-        <div class="record-meta">${esc(r.uniqueId || '')}${r.uniqueId ? ' · ' : ''}${r.tagColor ? `${esc(r.tagColor)} tag · ` : ''}${r.quantity ? `Qty ${esc(r.quantity)} · ` : ''}${esc(r.location || '')}${r.location ? ' · ' : ''}${new Date(r.createdAt).toLocaleDateString()} ${r.sentToStripe ? '· In Stripe' : ''}</div>
+        <div class="record-meta">${esc(r.uniqueId || '')}${r.uniqueId ? ' · ' : ''}${r.subVendor ? `${esc(r.subVendor)} · ` : ''}${r.tagColor ? `${esc(r.tagColor)} tag · ` : ''}${r.quantity ? `Qty ${esc(r.quantity)} · ` : ''}${esc(r.location || '')}${r.location ? ' · ' : ''}${new Date(r.createdAt).toLocaleDateString()} ${r.sentToStripe ? '· In Stripe' : ''}</div>
       </div>
       <div class="record-price">$${esc(r.price || '—')}</div>
       <div class="record-actions">
@@ -1444,7 +1448,7 @@ function addToCart(record) {
     // Prefer the tag's "Item" field (e.g. "Poles") as the display name over
     // "Name" (e.g. "JP", often a person's initials on these tags) - falls
     // back to Name for records/tags that only ever populate that field.
-    cart.push({ id: record.id, name: record.item || record.name, price: record.price, quantity: 1 });
+    cart.push({ id: record.id, name: record.item || record.name, price: record.price, quantity: 1, subVendor: record.subVendor || '' });
   }
   renderCart();
   toast('Added to cart', 'success');
@@ -1551,6 +1555,77 @@ async function completeSale(paymentMethod) {
   cart = [];
   renderCart();
   toast('Sale complete!', 'success');
+  return total;
+}
+
+// Cash sales also sync to Square as a real Payment (source_id: CASH), so
+// Square's own Dashboard/reports include cash sales alongside card ones,
+// not just this app's local Sales Report (see functions/api/square/
+// cash-payment.js). If Square isn't connected for this organization, the
+// cash sale still completes locally - Square sync is additive, never a
+// requirement to take a cash sale.
+async function completeCashSale() {
+  const total = await completeSale('cash');
+
+  let paymentId = null;
+  try {
+    const res = await fetch('/api/square/cash-payment', {
+      method: 'POST',
+      headers: locationHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ amount: total.toFixed(2) })
+    });
+    const data = await res.json();
+    if (res.ok) paymentId = data.paymentId;
+  } catch (err) {
+    console.warn('Square cash-payment sync failed:', err);
+  }
+  if (!paymentId) return; // Square not connected, or the sync failed - sale is still complete locally.
+
+  if (window.confirm('Print a receipt on the Terminal?')) {
+    await printCashReceipt(paymentId);
+  }
+}
+
+// Printing is decoupled from recording the payment above - it only needs
+// a device to send the RECEIPT terminal action to. Rather than making the
+// customer wait in line the way a card payment would, this only prints
+// when a terminal happens to be free right now; otherwise it says so and
+// gives up, since the cash sale itself is already complete either way.
+async function printCashReceipt(paymentId) {
+  let deviceId = null;
+  try {
+    const res = await fetch('/api/queue/enqueue', {
+      method: 'POST',
+      headers: locationHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ clientId: getClientId(), cart: [] })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Could not reach the terminal queue');
+
+    if (data.status !== 'assigned') {
+      fetch('/api/queue/cancel', {
+        method: 'POST',
+        headers: locationHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ clientId: getClientId() })
+      }).catch(() => {});
+      toast('No terminal free right now to print a receipt', 'error');
+      return;
+    }
+    deviceId = data.deviceId;
+
+    const printRes = await fetch('/api/square/cash-receipt', {
+      method: 'POST',
+      headers: locationHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ paymentId, deviceId })
+    });
+    const printData = await printRes.json();
+    if (!printRes.ok) throw new Error(printData.error || 'Failed to print receipt');
+    toast('Receipt sent to the terminal', 'success');
+  } catch (err) {
+    toast('Receipt error: ' + err.message, 'error');
+  } finally {
+    notifyTerminalFreedClientSide(deviceId);
+  }
 }
 
 function closeReviewModal() {
@@ -1667,38 +1742,186 @@ const btnSalesReportModalClose = document.getElementById('btn-sales-report-modal
 const salesReportSummary = document.getElementById('sales-report-summary');
 const salesReportList = document.getElementById('sales-report-list');
 const btnSalesReportExport = document.getElementById('btn-sales-report-export');
-let lastSalesReport = [];
+const salesReportFilterVendor = document.getElementById('sales-report-filter-vendor');
+const salesReportFilterMethod = document.getElementById('sales-report-filter-method');
+const salesReportSort = document.getElementById('sales-report-sort');
+const btnSalesReportViewSale = document.getElementById('btn-sales-report-view-sale');
+const btnSalesReportViewItem = document.getElementById('btn-sales-report-view-item');
+
+// allSales: every sale fetched from the server for this location, unfiltered.
+// visibleSales: allSales after the vendor/method filters + sort are
+// applied - this is what's actually on screen in "By Sale" view, and what
+// CSV export sends in that view, so exporting always matches what you're
+// looking at rather than silently exporting everything regardless of the
+// filters shown.
+let allSales = [];
+let visibleSales = [];
+let allItems = []; // current inventory, fetched fresh each time the report opens - used by "By Item" view to know what never sold.
+let salesReportView = 'sale'; // 'sale' or 'item'
+let soldRowsForExport = [];
+let unsoldRowsForExport = [];
 
 const PAYMENT_METHOD_LABELS = { cash: 'Cash', venmo: 'Venmo', card: 'Card (Terminal)' };
+const NO_SUB_VENDOR = '(no sub-vendor)';
 
 function paymentMethodLabel(method) {
   return PAYMENT_METHOD_LABELS[method] || method;
 }
 
+function populateSalesReportVendorFilter(sales) {
+  const vendors = new Set();
+  for (const sale of sales) {
+    for (const item of sale.items) {
+      if (item.subVendor) vendors.add(item.subVendor);
+    }
+  }
+  const current = salesReportFilterVendor.value;
+  salesReportFilterVendor.innerHTML = '<option value="">All sub-vendors</option>' +
+    Array.from(vendors).sort().map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+  if (vendors.has(current)) salesReportFilterVendor.value = current;
+}
+
+function applySalesReportFiltersAndSort() {
+  const vendor = salesReportFilterVendor.value;
+  const method = salesReportFilterMethod.value;
+  const sort = salesReportSort.value;
+
+  visibleSales = allSales.filter(sale =>
+    (!method || sale.paymentMethod === method) &&
+    (!vendor || sale.items.some(item => item.subVendor === vendor))
+  );
+
+  visibleSales.sort((a, b) => {
+    if (sort === 'date-asc') return new Date(a.createdAt) - new Date(b.createdAt);
+    if (sort === 'total-desc') return parseFloat(b.total) - parseFloat(a.total);
+    if (sort === 'total-asc') return parseFloat(a.total) - parseFloat(b.total);
+    return new Date(b.createdAt) - new Date(a.createdAt); // date-desc, default
+  });
+
+  if (salesReportView === 'item') {
+    renderItemPerformance(visibleSales, allItems, vendor);
+  } else {
+    renderSalesReport(visibleSales);
+  }
+}
+
+// Aggregates every sale's items into total quantity sold + revenue per
+// item, then cross-references current inventory to find items that have
+// quantity in stock but never appear in any (filtered) sale - i.e. things
+// that haven't sold. Matched by item id, which cart items already carry
+// forward from the inventory record they came from (see addToCart) and
+// which survives into the sale snapshot regardless of later inventory edits.
+function renderItemPerformance(sales, items, vendorFilter) {
+  const soldById = new Map();
+  for (const sale of sales) {
+    for (const item of sale.items) {
+      const quantity = parseInt(item.quantity, 10) || 0;
+      const revenue = (parseFloat(item.price) || 0) * quantity;
+      const existing = soldById.get(item.id);
+      if (existing) {
+        existing.quantity += quantity;
+        existing.revenue += revenue;
+      } else {
+        soldById.set(item.id, { name: item.name || '(no name)', subVendor: item.subVendor || '', quantity, revenue });
+      }
+    }
+  }
+
+  const soldRows = Array.from(soldById.values()).sort((a, b) => b.revenue - a.revenue);
+  // "Not sold" is specifically about consignment items that need to go
+  // back to their sub-vendor at the end of the event - items with no
+  // sub-vendor (the main vendor's own stock) aren't consignment and
+  // don't need this reconciliation, so they're excluded here even if
+  // they also never sold.
+  const unsoldRows = items
+    .filter(r => !!r.subVendor && !soldById.has(r.id) && (parseInt(r.quantity, 10) || 0) > 0 && (!vendorFilter || r.subVendor === vendorFilter))
+    .map(r => ({ name: r.item || r.name || '(no name)', subVendor: r.subVendor || '', quantity: parseInt(r.quantity, 10) || 0, price: r.price || '' }));
+
+  soldRowsForExport = soldRows;
+  unsoldRowsForExport = unsoldRows;
+
+  const totalSoldQty = soldRows.reduce((sum, r) => sum + r.quantity, 0);
+  const totalRevenue = soldRows.reduce((sum, r) => sum + r.revenue, 0);
+  salesReportSummary.innerHTML = `
+    <div class="sales-report-grand-total">${soldRows.length} item${soldRows.length === 1 ? '' : 's'} sold (${totalSoldQty} unit${totalSoldQty === 1 ? '' : 's'}) · $${totalRevenue.toFixed(2)} · ${unsoldRows.length} consignment item${unsoldRows.length === 1 ? '' : 's'} to return</div>
+  `;
+
+  const soldHtml = soldRows.length
+    ? soldRows.map(r => `
+      <div class="pending-sale-row">
+        <div class="pending-sale-info">
+          <span class="pending-sale-total">$${r.revenue.toFixed(2)}</span>
+          · <span class="pending-sale-status">${r.quantity} sold</span>
+          <div class="pending-sale-items">${esc(r.name)}${r.subVendor ? ` (${esc(r.subVendor)})` : ''}</div>
+        </div>
+      </div>
+    `).join('')
+    : '<div class="empty-state">No items sold yet.</div>';
+
+  const unsoldHtml = unsoldRows.length
+    ? unsoldRows.map(r => `
+      <div class="pending-sale-row">
+        <div class="pending-sale-info">
+          <span class="pending-sale-total">${r.quantity} in stock</span>
+          · <span class="pending-sale-status">Unsold - return to vendor</span>
+          <div class="pending-sale-items">${esc(r.name)}${r.subVendor ? ` (${esc(r.subVendor)})` : ''}${r.price ? ` · $${esc(r.price)} each` : ''}</div>
+        </div>
+      </div>
+    `).join('')
+    : '<div class="empty-state">No unsold consignment items - everything\'s either sold or isn\'t a sub-vendor\'s consignment item.</div>';
+
+  salesReportList.innerHTML = `
+    <h3 class="sales-report-subheading">Sold</h3>
+    ${soldHtml}
+    <h3 class="sales-report-subheading">Unsold Consignment Items (to return)</h3>
+    ${unsoldHtml}
+  `;
+}
+
+function setSalesReportView(view) {
+  salesReportView = view;
+  btnSalesReportViewSale.classList.toggle('active', view === 'sale');
+  btnSalesReportViewItem.classList.toggle('active', view === 'item');
+  salesReportSort.style.display = view === 'item' ? 'none' : '';
+  applySalesReportFiltersAndSort();
+}
+
 function renderSalesReport(sales) {
   const totalsByMethod = {};
+  const totalsByVendor = {};
   let grandTotal = 0;
   for (const sale of sales) {
-    const amount = parseFloat(sale.total) || 0;
-    grandTotal += amount;
-    totalsByMethod[sale.paymentMethod] = (totalsByMethod[sale.paymentMethod] || 0) + amount;
+    grandTotal += parseFloat(sale.total) || 0;
+    totalsByMethod[sale.paymentMethod] = (totalsByMethod[sale.paymentMethod] || 0) + (parseFloat(sale.total) || 0);
+    for (const item of sale.items) {
+      const amount = (parseFloat(item.price) || 0) * (parseInt(item.quantity, 10) || 0);
+      const vendorKey = item.subVendor || NO_SUB_VENDOR;
+      totalsByVendor[vendorKey] = (totalsByVendor[vendorKey] || 0) + amount;
+    }
   }
 
   const methodBreakdown = Object.entries(totalsByMethod)
     .map(([method, amount]) => `${paymentMethodLabel(method)}: $${amount.toFixed(2)}`)
     .join(' · ');
+  const vendorBreakdown = Object.entries(totalsByVendor)
+    .sort((a, b) => b[1] - a[1])
+    .map(([vendor, amount]) => `${vendor}: $${amount.toFixed(2)}`)
+    .join(' · ');
   salesReportSummary.innerHTML = `
     <div class="sales-report-grand-total">${sales.length} sale${sales.length === 1 ? '' : 's'} · $${grandTotal.toFixed(2)}</div>
     ${methodBreakdown ? `<div class="sales-report-breakdown">${esc(methodBreakdown)}</div>` : ''}
+    ${vendorBreakdown ? `<div class="sales-report-breakdown">By sub-vendor: ${esc(vendorBreakdown)}</div>` : ''}
   `;
 
   if (!sales.length) {
-    salesReportList.innerHTML = '<div class="empty-state">No sales recorded yet.</div>';
+    salesReportList.innerHTML = '<div class="empty-state">No sales match these filters.</div>';
     return;
   }
 
   salesReportList.innerHTML = sales.map(sale => {
-    const itemsSummary = sale.items.map(item => `${item.quantity}x ${item.name || '(no name)'}`).join(', ');
+    const itemsSummary = sale.items
+      .map(item => `${item.quantity}x ${item.name || '(no name)'}${item.subVendor ? ` (${item.subVendor})` : ''}`)
+      .join(', ');
     return `
     <div class="pending-sale-row">
       <div class="pending-sale-info">
@@ -1717,12 +1940,13 @@ async function openSalesReportModal() {
   salesReportSummary.textContent = '';
   salesReportList.innerHTML = '<div class="empty-state">Loading...</div>';
   try {
-    lastSalesReport = await getSales();
+    [allSales, allItems] = await Promise.all([getSales(), getRecords()]);
   } catch (err) {
     salesReportList.innerHTML = '<div class="empty-state">Failed to load sales.</div>';
     return;
   }
-  renderSalesReport(lastSalesReport);
+  populateSalesReportVendorFilter(allSales);
+  applySalesReportFiltersAndSort();
 }
 
 function closeSalesReportModal() {
@@ -1730,12 +1954,14 @@ function closeSalesReportModal() {
 }
 
 function exportSalesCSV(sales) {
-  const rows = [['Timestamp', 'Items', 'Total', 'Payment Method']];
+  const rows = [['Timestamp', 'Items', 'Sub-vendors', 'Total', 'Payment Method']];
   sales.forEach(sale => {
     const itemsSummary = sale.items.map(item => `${item.quantity}x ${item.name || '(no name)'}`).join('; ');
+    const subVendors = Array.from(new Set(sale.items.map(item => item.subVendor).filter(Boolean))).join('; ');
     rows.push([
       sale.createdAt || '',
       `"${itemsSummary.replace(/"/g, '""')}"`,
+      `"${subVendors.replace(/"/g, '""')}"`,
       sale.total || '',
       paymentMethodLabel(sale.paymentMethod)
     ]);
@@ -1750,11 +1976,40 @@ function exportSalesCSV(sales) {
   URL.revokeObjectURL(url);
 }
 
+function exportItemPerformanceCSV(soldRows, unsoldRows) {
+  const rows = [['Status', 'Item', 'Sub-vendor', 'Quantity', 'Revenue/Price']];
+  soldRows.forEach(r => {
+    rows.push(['Sold', `"${r.name.replace(/"/g, '""')}"`, `"${(r.subVendor || '').replace(/"/g, '""')}"`, r.quantity, r.revenue.toFixed(2)]);
+  });
+  unsoldRows.forEach(r => {
+    rows.push(['Unsold consignment - return to vendor', `"${r.name.replace(/"/g, '""')}"`, `"${(r.subVendor || '').replace(/"/g, '""')}"`, r.quantity, r.price || '']);
+  });
+  const csv = rows.map(r => r.join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `item-performance-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+btnSalesReportViewSale.addEventListener('click', () => setSalesReportView('sale'));
+btnSalesReportViewItem.addEventListener('click', () => setSalesReportView('item'));
+
 btnSalesReport.addEventListener('click', openSalesReportModal);
 btnSalesReportModalClose.addEventListener('click', closeSalesReportModal);
+salesReportFilterVendor.addEventListener('change', applySalesReportFiltersAndSort);
+salesReportFilterMethod.addEventListener('change', applySalesReportFiltersAndSort);
+salesReportSort.addEventListener('change', applySalesReportFiltersAndSort);
 btnSalesReportExport.addEventListener('click', () => {
-  if (!lastSalesReport.length) { toast('No sales to export', 'error'); return; }
-  exportSalesCSV(lastSalesReport);
+  if (salesReportView === 'item') {
+    if (!soldRowsForExport.length && !unsoldRowsForExport.length) { toast('Nothing to export', 'error'); return; }
+    exportItemPerformanceCSV(soldRowsForExport, unsoldRowsForExport);
+  } else {
+    if (!visibleSales.length) { toast('No sales to export', 'error'); return; }
+    exportSalesCSV(visibleSales);
+  }
   toast('CSV downloaded', 'success');
 });
 
@@ -2053,7 +2308,7 @@ btnReviewSquare.addEventListener('click', () => {
 btnReviewComplete.addEventListener('click', () => {
   if (!cart.length) return;
   closeReviewModal();
-  completeSale('cash');
+  completeCashSale();
 });
 
 btnReviewClear.addEventListener('click', () => {

@@ -12,6 +12,7 @@ export function rowToRecord(row) {
     size: row.size || '',
     color: row.color || '',
     tagColor: row.tag_color || '',
+    subVendor: row.sub_vendor || '',
     price: row.price || '',
     quantity: row.quantity || '',
     location: row.bin_location || '',

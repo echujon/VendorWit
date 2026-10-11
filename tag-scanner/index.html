@@ -100,6 +100,7 @@
         <div class="match-row"><span class="match-label">Size</span><span id="match-size"></span></div>
         <div class="match-row"><span class="match-label">Color</span><span id="match-color"></span></div>
         <div class="match-row"><span class="match-label">Tag Color</span><span id="match-tagColor"></span></div>
+        <div class="match-row"><span class="match-label">Sub-vendor</span><span id="match-subVendor"></span></div>
         <div class="match-row"><span class="match-label">Price</span><span id="match-price"></span></div>
         <div class="match-row"><span class="match-label">Quantity</span><span id="match-quantity"></span></div>
         <div class="match-row"><span class="match-label">Location</span><span id="match-location"></span></div>
@@ -154,6 +155,10 @@
         <div class="field">
           <label for="field-tag-color">Tag Color (vendor)</label>
           <input type="text" id="field-tag-color" placeholder="Auto-detected from photo">
+        </div>
+        <div class="field">
+          <label for="field-sub-vendor">Sub-vendor Name</label>
+          <input type="text" id="field-sub-vendor" placeholder="e.g. Jane's Crafts">
         </div>
         <div class="field">
           <label for="field-price">Price ($)</label>
@@ -256,7 +261,28 @@
     <div class="modal-content modal-content-tall">
       <button class="modal-close" id="btn-sales-report-modal-close" title="Close">✕</button>
       <h2>Sales Report</h2>
+      <div class="scan-mode-toggle" role="group" aria-label="Report view" style="margin-bottom:0.75rem;">
+        <button type="button" class="scan-mode-btn active" id="btn-sales-report-view-sale" data-view="sale">By Sale</button>
+        <button type="button" class="scan-mode-btn" id="btn-sales-report-view-item" data-view="item">By Item (Sold/Unsold)</button>
+      </div>
       <div id="sales-report-summary" class="sales-report-summary"></div>
+      <div class="sales-report-controls">
+        <select id="sales-report-filter-vendor">
+          <option value="">All sub-vendors</option>
+        </select>
+        <select id="sales-report-filter-method">
+          <option value="">All payment methods</option>
+          <option value="cash">Cash</option>
+          <option value="venmo">Venmo</option>
+          <option value="card">Card (Terminal)</option>
+        </select>
+        <select id="sales-report-sort">
+          <option value="date-desc">Newest first</option>
+          <option value="date-asc">Oldest first</option>
+          <option value="total-desc">Highest total</option>
+          <option value="total-asc">Lowest total</option>
+        </select>
+      </div>
       <button class="btn btn-outline" id="btn-sales-report-export" style="font-size:0.8rem;padding:0.35rem 0.75rem;margin-bottom:0.75rem;">Export CSV</button>
       <div id="sales-report-list"></div>
     </div>

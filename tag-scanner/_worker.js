@@ -35,6 +35,8 @@ import * as squareOauthCallback from './functions/api/square/oauth/callback.js';
 import * as squareConnection from './functions/api/square/connection.js';
 import * as squareDeviceCodes from './functions/api/square/device-codes.js';
 import * as squareDeviceCodesStatus from './functions/api/square/device-codes-status.js';
+import * as squareCashPayment from './functions/api/square/cash-payment.js';
+import * as squareCashReceipt from './functions/api/square/cash-receipt.js';
 
 export default {
   async fetch(request, env, ctx) {
@@ -136,6 +138,12 @@ export default {
     }
     if (pathname === '/api/square/device-codes-status' && method === 'GET') {
       return squareDeviceCodesStatus.onRequestGet(context);
+    }
+    if (pathname === '/api/square/cash-payment' && method === 'POST') {
+      return squareCashPayment.onRequestPost(context);
+    }
+    if (pathname === '/api/square/cash-receipt' && method === 'POST') {
+      return squareCashReceipt.onRequestPost(context);
     }
 
     // Not an API route - serve the static site (index.html, css/, js/,
