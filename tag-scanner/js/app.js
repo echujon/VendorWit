@@ -197,7 +197,16 @@ function onBarcodeDetected(rawValue) {
   stopBarcodeLoop();
   snapshotVideoFrame(blob => {
     stopCamera();
-    processBarcodeValue(rawValue, blob);
+    // Belt-and-braces: processBarcodeValue already guards its own lookup,
+    // but if anything else unexpected throws, this still guarantees the
+    // UI recovers to a visible error instead of being stuck on the
+    // captured frame with no result card and no feedback at all.
+    processBarcodeValue(rawValue, blob).catch(err => {
+      console.warn('Barcode scan failed:', err);
+      toast('Barcode scan error: ' + err.message, 'error');
+      hideStatus();
+      resetScanArea();
+    });
   });
 }
 
@@ -289,7 +298,13 @@ function stopBarcodeLoop() {
 async function processBarcodeValue(rawValue, blob) {
   hideAllResultCards();
   showStatus('Looking up barcode...');
-  const match = await findByUniqueId(rawValue);
+  let match = null;
+  try {
+    match = await findByUniqueId(rawValue);
+  } catch (err) {
+    console.warn('Barcode lookup failed:', err);
+    toast('Could not check inventory: ' + err.message, 'error');
+  }
   if (match) {
     hideStatus();
     lastRawText = rawValue;
