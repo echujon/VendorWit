@@ -240,7 +240,12 @@ async function startZxingBarcodeLoop() {
   // source of truth for who owns the stream.
   if (!zxingScanning || !cameraActive) return; // stopped while the library was loading
   try {
-    reader.decodeFromVideoElement(video, (result, err) => {
+    // decodeFromVideoElement (no "Continuously") only takes one argument
+    // and does a single one-shot decode attempt, silently ignoring any
+    // callback passed to it - decodeFromVideoElementContinuously is the
+    // one that actually polls repeatedly and invokes the callback each
+    // attempt, which is what continuous barcode scanning needs here.
+    reader.decodeFromVideoElementContinuously(video, (result, err) => {
       if (result) onBarcodeDetected(result.getText());
       // err is a routine "nothing found in this frame" on almost every
       // call - that's normal for continuous scanning, not a real failure.
