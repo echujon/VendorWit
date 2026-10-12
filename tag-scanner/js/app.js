@@ -308,6 +308,11 @@ async function startZxingBarcodeLoop() {
   }
   if (!cameraActive) return; // camera was stopped while the library was loading
 
+  // TEMPORARY diagnostic - confirms what resolution the camera actually
+  // delivered, since "ideal" in getUserMedia is only a request, not a
+  // guarantee. Remove once the iPad issue is confirmed fixed.
+  console.warn(`Barcode camera actual resolution: ${video.videoWidth}x${video.videoHeight}`);
+
   // Drives reader.decode() directly on our own timer, rather than any of
   // ZXing's decodeFromVideo*() helpers - those wait for the video
   // element's "playing" event before they'll start, which never fires
