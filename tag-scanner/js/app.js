@@ -293,6 +293,12 @@ async function getZxingReader() {
     const hints = new Map();
     hints.set(DecodeHintType.TRY_HARDER, true);
     zxingReader = new BrowserMultiFormatReader(hints);
+    // TEMPORARY diagnostic - exposes the reader globally so its internal
+    // capture canvas (reader.captureCanvas, a plain property) can be
+    // inspected/displayed directly from the console, to see with our own
+    // eyes exactly what pixel data decode() is actually working with.
+    // Remove once the iPad issue is confirmed fixed.
+    window.__zxingReader = zxingReader;
   }
   return zxingReader;
 }
