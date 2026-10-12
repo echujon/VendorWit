@@ -114,9 +114,15 @@ const fileInput = document.getElementById('file-input');
 // --- Camera ---
 async function startCamera() {
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1024 }, height: { ideal: 960 } }
-    });
+    // Barcode mode asks for a higher-resolution feed than OCR/Image do -
+    // a barcode's narrow bars need real pixel density to resolve
+    // correctly, confirmed on-device: at 1024x960 decode() consistently
+    // failed to find a code that was clearly, steadily in frame. OCR/
+    // Image mode keep the lower resolution they were already tuned with.
+    const videoConstraints = scanMode === 'barcode'
+      ? { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+      : { facingMode: { ideal: 'environment' }, width: { ideal: 1024 }, height: { ideal: 960 } };
+    stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
     video.srcObject = stream;
     video.classList.remove('hidden');
     previewImg.classList.add('hidden');
@@ -220,6 +226,27 @@ let barcodeDetector = null;
 let barcodeLoopHandle = null;
 let zxingReader = null;
 
+// The on-screen guide (.scan-frame, see style.css) only covers 80% width
+// / 60% height of the preview, centered - decoding the full video frame
+// means the barcode is a much smaller fraction of the analyzed image
+// than what the user actually sees and aims at. Cropping to the same
+// region effectively zooms in on exactly that area, raising the
+// barcode's pixel density without needing real camera zoom.
+const BARCODE_SCAN_REGION = { widthRatio: 0.8, heightRatio: 0.6 };
+
+function getBarcodeScanRegionCanvas() {
+  if (!video.videoWidth || !video.videoHeight) return null;
+  const sw = video.videoWidth * BARCODE_SCAN_REGION.widthRatio;
+  const sh = video.videoHeight * BARCODE_SCAN_REGION.heightRatio;
+  const sx = (video.videoWidth - sw) / 2;
+  const sy = (video.videoHeight - sh) / 2;
+  const canvas = document.createElement('canvas');
+  canvas.width = sw;
+  canvas.height = sh;
+  canvas.getContext('2d').drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
+  return canvas;
+}
+
 function onBarcodeDetected(rawValue) {
   stopBarcodeLoop();
   snapshotVideoFrame(blob => {
@@ -241,9 +268,11 @@ function startNativeBarcodeLoop() {
   if (!barcodeDetector) barcodeDetector = new BarcodeDetector();
   barcodeLoopHandle = setInterval(async () => {
     if (!cameraActive || video.readyState < 2) return;
+    const region = getBarcodeScanRegionCanvas();
+    if (!region) return;
     let results;
     try {
-      results = await barcodeDetector.detect(video);
+      results = await barcodeDetector.detect(region);
     } catch (err) {
       console.warn('Barcode detect failed:', err);
       return;
@@ -291,6 +320,12 @@ async function startZxingBarcodeLoop() {
   let zxingTickCount = 0;
   barcodeLoopHandle = setInterval(() => {
     if (!cameraActive || video.readyState < 2) return;
+    // Unlike the native path above, this can't be handed a cropped
+    // canvas - ZXing's internal capture-canvas sizing only recognizes
+    // HTMLVideoElement or HTMLImageElement (checked via instanceof), so a
+    // plain canvas falls through to a 0x0 internal buffer and fails in a
+    // much more confusing way than just decoding the full frame. Higher
+    // camera resolution + TRY_HARDER are what help this path instead.
     let result;
     try {
       result = reader.decode(video);
