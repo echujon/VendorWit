@@ -280,13 +280,23 @@ async function startZxingBarcodeLoop() {
   // decode() is the low-level primitive instead: one decode attempt
   // against whatever frame is current right now, no lifecycle waiting,
   // same shape as the native BarcodeDetector loop above.
+  let zxingTickCount = 0;
   barcodeLoopHandle = setInterval(() => {
     if (!cameraActive || video.readyState < 2) return;
     let result;
     try {
       result = reader.decode(video);
     } catch (err) {
-      return; // no barcode found in this frame - expected on almost every tick
+      // TEMPORARY diagnostic logging - log just the first few ticks'
+      // errors so we can see on-device (iPad) exactly what decode() is
+      // actually throwing, since "NotFoundException" (expected, no
+      // barcode in frame yet) looks identical to a real bug from the
+      // outside otherwise. Remove once the iPad issue is confirmed fixed.
+      zxingTickCount++;
+      if (zxingTickCount <= 5) {
+        console.warn(`ZXing decode attempt #${zxingTickCount} error:`, err && err.name, err && err.message, err);
+      }
+      return;
     }
     if (result) onBarcodeDetected(result.getText());
   }, 300);
