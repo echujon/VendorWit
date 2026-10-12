@@ -225,6 +225,7 @@ function captureFrame() {
 let barcodeDetector = null;
 let barcodeLoopHandle = null;
 let zxingReader = null;
+let zxingScanning = false;
 
 // The on-screen guide (.scan-frame, see style.css) only covers 80% width
 // / 60% height of the preview, centered - decoding the full video frame
@@ -304,6 +305,7 @@ async function getZxingReader() {
 }
 
 async function startZxingBarcodeLoop() {
+  zxingScanning = true;
   let reader;
   try {
     reader = await getZxingReader();
@@ -312,48 +314,33 @@ async function startZxingBarcodeLoop() {
     toast('Could not load barcode scanner', 'error');
     return;
   }
-  if (!cameraActive) return; // camera was stopped while the library was loading
+  if (!zxingScanning || !cameraActive) return; // stopped while the library was loading
 
   // TEMPORARY diagnostic - confirms what resolution the camera actually
   // delivered, since "ideal" in getUserMedia is only a request, not a
   // guarantee. Remove once the iPad issue is confirmed fixed.
   console.warn(`Barcode camera actual resolution: ${video.videoWidth}x${video.videoHeight}`);
 
-  // Drives reader.decode() directly on our own timer, rather than any of
-  // ZXing's decodeFromVideo*() helpers - those wait for the video
-  // element's "playing" event before they'll start, which never fires
-  // again on a video that's already playing (ours always is, since
-  // startCamera already has it running by the time this attaches) -
-  // that's a silent deadlock, not an error, so nothing ever happens.
-  // decode() is the low-level primitive instead: one decode attempt
-  // against whatever frame is current right now, no lifecycle waiting,
-  // same shape as the native BarcodeDetector loop above.
-  let zxingTickCount = 0;
-  barcodeLoopHandle = setInterval(() => {
-    if (!cameraActive || video.readyState < 2) return;
-    // Unlike the native path above, this can't be handed a cropped
-    // canvas - ZXing's internal capture-canvas sizing only recognizes
-    // HTMLVideoElement or HTMLImageElement (checked via instanceof), so a
-    // plain canvas falls through to a 0x0 internal buffer and fails in a
-    // much more confusing way than just decoding the full frame. Higher
-    // camera resolution + TRY_HARDER are what help this path instead.
-    let result;
-    try {
-      result = reader.decode(video);
-    } catch (err) {
-      // TEMPORARY diagnostic logging - log just the first few ticks'
-      // errors so we can see on-device (iPad) exactly what decode() is
-      // actually throwing, since "NotFoundException" (expected, no
-      // barcode in frame yet) looks identical to a real bug from the
-      // outside otherwise. Remove once the iPad issue is confirmed fixed.
-      zxingTickCount++;
-      if (zxingTickCount <= 5) {
-        console.warn(`ZXing decode attempt #${zxingTickCount} error:`, err && err.name, err && err.message, err);
-      }
-      return;
-    }
-    if (result) onBarcodeDetected(result.getText());
-  }, 300);
+  // Confirmed on-device: decodeFromVideoElementContinuously is what
+  // actually finds barcodes on this hardware/iOS combination - an
+  // attempt to replace it with a manual reader.decode(video) polling
+  // loop (reasoned from reading the library's source, which suggested
+  // this method could deadlock waiting for a "playing" event) never
+  // once succeeded in testing, while this did. Keeping it, even though
+  // the theoretical concern isn't fully explained.
+  try {
+    reader.decodeFromVideoElementContinuously(video, (result, err) => {
+      if (result) onBarcodeDetected(result.getText());
+      // err is a routine "nothing found in this frame" on almost every
+      // call - that's normal for continuous scanning, not a real failure.
+    }).catch(err => {
+      if (zxingScanning) console.warn('ZXing decode failed:', err);
+    });
+  } catch (err) {
+    console.warn('ZXing API not available as expected:', err);
+    toast('Barcode scanning is not available on this browser - try OCR instead, or add the item manually', 'error');
+    zxingScanning = false;
+  }
 }
 
 function startBarcodeLoop() {
@@ -369,6 +356,10 @@ function stopBarcodeLoop() {
   if (barcodeLoopHandle) {
     clearInterval(barcodeLoopHandle);
     barcodeLoopHandle = null;
+  }
+  if (zxingScanning) {
+    zxingScanning = false;
+    zxingReader?.reset();
   }
 }
 
