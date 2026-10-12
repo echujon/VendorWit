@@ -254,8 +254,16 @@ function startNativeBarcodeLoop() {
 
 async function getZxingReader() {
   if (!zxingReader) {
-    const { BrowserMultiFormatReader } = await import('https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/+esm');
-    zxingReader = new BrowserMultiFormatReader();
+    const { BrowserMultiFormatReader, DecodeHintType } = await import('https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/+esm');
+    // Default decode() is tuned for speed over thoroughness - fine for a
+    // clean, flat, well-lit barcode, but a phone/tablet camera frame
+    // (motion blur, slight angle, uneven lighting) needs the more
+    // exhaustive TRY_HARDER pass to actually find the code, confirmed
+    // on-device: without this, decode() reliably threw NotFoundException
+    // on every single attempt even with a real barcode held steady in frame.
+    const hints = new Map();
+    hints.set(DecodeHintType.TRY_HARDER, true);
+    zxingReader = new BrowserMultiFormatReader(hints);
   }
   return zxingReader;
 }
