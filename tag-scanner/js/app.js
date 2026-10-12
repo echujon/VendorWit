@@ -151,19 +151,47 @@ function stopCamera() {
 // Shared by the manual Capture tap (OCR/Image modes) and barcode auto-
 // detect (below) - grabs the current video frame as a still, shows it as
 // the frozen preview, and hands the blob to whichever processor is next.
+function finishSnapshot(blob, onBlob) {
+  capturedBlob = blob;
+  const url = URL.createObjectURL(blob);
+  previewImg.src = url;
+  previewImg.classList.remove('hidden');
+  video.classList.add('hidden');
+  scanOverlay.style.display = 'none';
+  onBlob(blob);
+}
+
 function snapshotVideoFrame(onBlob) {
+  if (!video.videoWidth || !video.videoHeight) {
+    console.warn('snapshotVideoFrame: video has no dimensions yet, nothing to capture');
+    toast('Camera not ready yet - try again in a moment', 'error');
+    return;
+  }
   const canvas = document.createElement('canvas');
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
   canvas.getContext('2d').drawImage(video, 0, 0);
+  // toBlob() is known to silently call back with null on some Safari/iOS
+  // versions instead of throwing anything catchable - toDataURL() is the
+  // older, more universally reliable API, so it's the fallback here
+  // rather than just failing outright when that happens.
   canvas.toBlob(blob => {
-    capturedBlob = blob;
-    const url = URL.createObjectURL(blob);
-    previewImg.src = url;
-    previewImg.classList.remove('hidden');
-    video.classList.add('hidden');
-    scanOverlay.style.display = 'none';
-    onBlob(blob);
+    if (blob) {
+      finishSnapshot(blob, onBlob);
+      return;
+    }
+    console.warn('canvas.toBlob returned null - falling back to toDataURL');
+    try {
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+      const [, base64] = dataUrl.split(',');
+      const bytes = atob(base64);
+      const buffer = new Uint8Array(bytes.length);
+      for (let i = 0; i < bytes.length; i++) buffer[i] = bytes.charCodeAt(i);
+      finishSnapshot(new Blob([buffer], { type: 'image/jpeg' }), onBlob);
+    } catch (err) {
+      console.warn('toDataURL fallback also failed:', err);
+      toast('Could not capture the camera frame - try again', 'error');
+    }
   }, 'image/jpeg', 0.92);
 }
 
@@ -191,7 +219,6 @@ function captureFrame() {
 let barcodeDetector = null;
 let barcodeLoopHandle = null;
 let zxingReader = null;
-let zxingScanning = false;
 
 function onBarcodeDetected(rawValue) {
   stopBarcodeLoop();
@@ -234,7 +261,6 @@ async function getZxingReader() {
 }
 
 async function startZxingBarcodeLoop() {
-  zxingScanning = true;
   let reader;
   try {
     reader = await getZxingReader();
@@ -243,29 +269,27 @@ async function startZxingBarcodeLoop() {
     toast('Could not load barcode scanner', 'error');
     return;
   }
-  // The camera/video element is already running (startCamera) - this
-  // decodes against that existing stream rather than letting ZXing
-  // request its own, so Capture/Camera state here stays the single
-  // source of truth for who owns the stream.
-  if (!zxingScanning || !cameraActive) return; // stopped while the library was loading
-  try {
-    // decodeFromVideoElement (no "Continuously") only takes one argument
-    // and does a single one-shot decode attempt, silently ignoring any
-    // callback passed to it - decodeFromVideoElementContinuously is the
-    // one that actually polls repeatedly and invokes the callback each
-    // attempt, which is what continuous barcode scanning needs here.
-    reader.decodeFromVideoElementContinuously(video, (result, err) => {
-      if (result) onBarcodeDetected(result.getText());
-      // err is a routine "nothing found in this frame" on almost every
-      // call - that's normal for continuous scanning, not a real failure.
-    }).catch(err => {
-      if (zxingScanning) console.warn('ZXing decode failed:', err);
-    });
-  } catch (err) {
-    console.warn('ZXing API not available as expected:', err);
-    toast('Barcode scanning is not available on this browser - try OCR instead, or add the item manually', 'error');
-    zxingScanning = false;
-  }
+  if (!cameraActive) return; // camera was stopped while the library was loading
+
+  // Drives reader.decode() directly on our own timer, rather than any of
+  // ZXing's decodeFromVideo*() helpers - those wait for the video
+  // element's "playing" event before they'll start, which never fires
+  // again on a video that's already playing (ours always is, since
+  // startCamera already has it running by the time this attaches) -
+  // that's a silent deadlock, not an error, so nothing ever happens.
+  // decode() is the low-level primitive instead: one decode attempt
+  // against whatever frame is current right now, no lifecycle waiting,
+  // same shape as the native BarcodeDetector loop above.
+  barcodeLoopHandle = setInterval(() => {
+    if (!cameraActive || video.readyState < 2) return;
+    let result;
+    try {
+      result = reader.decode(video);
+    } catch (err) {
+      return; // no barcode found in this frame - expected on almost every tick
+    }
+    if (result) onBarcodeDetected(result.getText());
+  }, 300);
 }
 
 function startBarcodeLoop() {
@@ -281,10 +305,6 @@ function stopBarcodeLoop() {
   if (barcodeLoopHandle) {
     clearInterval(barcodeLoopHandle);
     barcodeLoopHandle = null;
-  }
-  if (zxingScanning) {
-    zxingScanning = false;
-    zxingReader?.reset();
   }
 }
 
