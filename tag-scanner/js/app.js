@@ -116,11 +116,14 @@ async function startCamera() {
   try {
     // Barcode mode asks for a higher-resolution feed than OCR/Image do -
     // a barcode's narrow bars need real pixel density to resolve
-    // correctly, confirmed on-device: at 1024x960 decode() consistently
-    // failed to find a code that was clearly, steadily in frame. OCR/
-    // Image mode keep the lower resolution they were already tuned with.
+    // correctly. 720p is a middle ground: more detail than OCR/Image
+    // mode's 1024x960, but noticeably lighter than 1920x1080 for
+    // decode() to scan every ~300ms (each attempt is a synchronous,
+    // CPU-heavy pass with TRY_HARDER enabled - fewer pixels means less
+    // main-thread blocking, which is what reads as UI lag/stutter during
+    // scanning).
     const videoConstraints = scanMode === 'barcode'
-      ? { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+      ? { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
       : { facingMode: { ideal: 'environment' }, width: { ideal: 1024 }, height: { ideal: 960 } };
     stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
     video.srcObject = stream;
@@ -293,12 +296,6 @@ async function getZxingReader() {
     const hints = new Map();
     hints.set(DecodeHintType.TRY_HARDER, true);
     zxingReader = new BrowserMultiFormatReader(hints);
-    // TEMPORARY diagnostic - exposes the reader globally so its internal
-    // capture canvas (reader.captureCanvas, a plain property) can be
-    // inspected/displayed directly from the console, to see with our own
-    // eyes exactly what pixel data decode() is actually working with.
-    // Remove once the iPad issue is confirmed fixed.
-    window.__zxingReader = zxingReader;
   }
   return zxingReader;
 }
@@ -314,42 +311,24 @@ async function startZxingBarcodeLoop() {
   }
   if (!cameraActive) return; // camera was stopped while the library was loading
 
-  // TEMPORARY diagnostic - confirms what resolution the camera actually
-  // delivered, since "ideal" in getUserMedia is only a request, not a
-  // guarantee. Remove once the iPad issue is confirmed fixed.
-  console.warn(`Barcode camera actual resolution: ${video.videoWidth}x${video.videoHeight}`);
-
-  // decodeFromVideoElementContinuously waits for the video's "playing"
-  // event before it'll start - confirmed on-device (twice) that this
-  // deadlocks forever and never attempts a single decode, since our
-  // video is already playing by the time this attaches (no new
-  // "playing" event ever fires). Driving reader.decode() directly on
-  // our own timer instead actually runs and attempts real decodes every
-  // tick (confirmed via logged NotFoundException errors) - it hasn't
-  // found a barcode successfully yet, but it's the version that's
-  // actually trying, not silently stuck.
-  // TEMPORARY diagnostic - logs the first several ticks unconditionally
-  // (readyState, dimensions, and whether decode() threw or succeeded) so
-  // we can see on-device whether the loop is actually reaching decode()
-  // at all, since a failed decode is normally silent by design and looks
-  // identical to "the loop never runs" from the outside otherwise.
-  // Remove once the iPad issue is confirmed fixed.
-  let zxingTickCount = 0;
+  // Drives reader.decode() directly on our own timer, rather than any of
+  // ZXing's decodeFromVideo*() helpers - those wait for the video
+  // element's "playing" event before they'll start, which never fires
+  // again on a video that's already playing (ours always is, since
+  // startCamera already has it running by the time this attaches), so
+  // they deadlock forever and never attempt a single decode. decode()
+  // is the low-level primitive instead: one decode attempt against
+  // whatever frame is current right now, no lifecycle waiting. Finding
+  // an actual barcode can take a few tries, same as any barcode
+  // scanner - that's normal, not a bug.
   barcodeLoopHandle = setInterval(() => {
-    zxingTickCount++;
-    const verbose = zxingTickCount <= 10;
-    if (!cameraActive || video.readyState < 2) {
-      if (verbose) console.warn(`tick #${zxingTickCount}: skipped - cameraActive=${cameraActive} readyState=${video.readyState}`);
-      return;
-    }
+    if (!cameraActive || video.readyState < 2) return;
     let result;
     try {
       result = reader.decode(video);
     } catch (err) {
-      if (verbose) console.warn(`tick #${zxingTickCount}: decode threw`, err && err.name, err && err.message);
       return; // no barcode found in this frame - expected on almost every tick
     }
-    if (verbose) console.warn(`tick #${zxingTickCount}: decode returned`, result);
     if (result) onBarcodeDetected(result.getText());
   }, 300);
 }
