@@ -328,14 +328,28 @@ async function startZxingBarcodeLoop() {
   // tick (confirmed via logged NotFoundException errors) - it hasn't
   // found a barcode successfully yet, but it's the version that's
   // actually trying, not silently stuck.
+  // TEMPORARY diagnostic - logs the first several ticks unconditionally
+  // (readyState, dimensions, and whether decode() threw or succeeded) so
+  // we can see on-device whether the loop is actually reaching decode()
+  // at all, since a failed decode is normally silent by design and looks
+  // identical to "the loop never runs" from the outside otherwise.
+  // Remove once the iPad issue is confirmed fixed.
+  let zxingTickCount = 0;
   barcodeLoopHandle = setInterval(() => {
-    if (!cameraActive || video.readyState < 2) return;
+    zxingTickCount++;
+    const verbose = zxingTickCount <= 10;
+    if (!cameraActive || video.readyState < 2) {
+      if (verbose) console.warn(`tick #${zxingTickCount}: skipped - cameraActive=${cameraActive} readyState=${video.readyState}`);
+      return;
+    }
     let result;
     try {
       result = reader.decode(video);
     } catch (err) {
+      if (verbose) console.warn(`tick #${zxingTickCount}: decode threw`, err && err.name, err && err.message);
       return; // no barcode found in this frame - expected on almost every tick
     }
+    if (verbose) console.warn(`tick #${zxingTickCount}: decode returned`, result);
     if (result) onBarcodeDetected(result.getText());
   }, 300);
 }
