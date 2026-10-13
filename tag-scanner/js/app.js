@@ -138,10 +138,28 @@ async function startCamera() {
     // CPU-heavy pass with TRY_HARDER enabled - fewer pixels means less
     // main-thread blocking, which is what reads as UI lag/stutter during
     // scanning).
-    const videoConstraints = scanMode === 'barcode'
-      ? { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
+    //
+    // "ideal" constraints kept landing on an odd height (961, 721 - one
+    // pixel over what was asked) on the iPad this was tested on,
+    // suggesting the camera was synthesizing a non-native size via
+    // internal cropping/scaling rather than using a real native mode -
+    // exactly the kind of operation prone to off-by-one results, and
+    // that odd dimension correlates with ZXing's getImageData calls
+    // failing. "exact" forces a real supported mode instead of letting
+    // the browser round toward something synthesized; if the device
+    // can't do exactly 1280x720, this throws OverconstrainedError and
+    // falls back to the old "ideal" request rather than failing outright.
+    let videoConstraints = scanMode === 'barcode'
+      ? { facingMode: { ideal: 'environment' }, width: { exact: 1280 }, height: { exact: 720 } }
       : { facingMode: { ideal: 'environment' }, width: { ideal: 1024 }, height: { ideal: 960 } };
-    stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
+    } catch (exactErr) {
+      if (scanMode !== 'barcode') throw exactErr;
+      console.warn('Exact 1280x720 not supported, falling back to ideal:', exactErr);
+      videoConstraints = { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } };
+      stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
+    }
     video.srcObject = stream;
     video.classList.remove('hidden');
     previewImg.classList.add('hidden');
@@ -363,6 +381,17 @@ function stopBarcodeLoop() {
     clearInterval(barcodeLoopHandle);
     barcodeLoopHandle = null;
   }
+  // ZXing caches its internal capture canvas (reader.captureCanvas) and
+  // only ever creates it once - it never resizes it for a later camera
+  // session with different actual video dimensions (common, since
+  // getUserMedia's "ideal" constraints aren't guaranteed to produce the
+  // same resolution every time). Without resetting, decode() keeps
+  // drawing into a stale, wrong-sized canvas on the next scan and
+  // getImageData starts failing persistently - confirmed on-device:
+  // this is exactly why it worked once, then never again. reset() is
+  // safe to call even if a native BarcodeDetector was used instead -
+  // zxingReader is null until ZXing is actually loaded.
+  zxingReader?.reset();
 }
 
 // A decoded barcode is a definitive ID, so it's checked against existing
