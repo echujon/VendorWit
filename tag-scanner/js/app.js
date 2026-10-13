@@ -50,12 +50,28 @@ let scanMode = 'ocr';
 btnScanModeBarcode.classList.remove('hidden');
 
 function setScanMode(mode) {
+  const previousMode = scanMode;
   scanMode = mode;
   btnScanModeOcr.classList.toggle('active', mode === 'ocr');
   btnScanModeImage.classList.toggle('active', mode === 'image');
   btnScanModeBarcode.classList.toggle('active', mode === 'barcode');
-  if (cameraActive) {
-    if (mode === 'barcode') startBarcodeLoop(); else stopBarcodeLoop();
+  if (!cameraActive) return;
+
+  // Barcode mode asks for a different camera resolution than OCR/Image
+  // do (see startCamera) - that only takes effect when the stream is
+  // actually (re)started, so switching to/from Barcode mode while the
+  // camera is already running has to restart the stream, or it keeps
+  // whatever resolution was already active. That mismatch is exactly
+  // what caused a canvas size error on iPad (ZXing expecting the
+  // barcode-mode resolution while the stream was still at OCR's).
+  const switchingBarcodeTier = (previousMode === 'barcode') !== (mode === 'barcode');
+  if (switchingBarcodeTier) {
+    stopCamera();
+    startCamera();
+  } else if (mode === 'barcode') {
+    startBarcodeLoop();
+  } else {
+    stopBarcodeLoop();
   }
 }
 btnScanModeOcr.addEventListener('click', () => setScanMode('ocr'));
