@@ -225,7 +225,6 @@ function captureFrame() {
 let barcodeDetector = null;
 let barcodeLoopHandle = null;
 let zxingReader = null;
-let zxingScanning = false;
 
 // The on-screen guide (.scan-frame, see style.css) only covers 80% width
 // / 60% height of the preview, centered - decoding the full video frame
@@ -305,7 +304,6 @@ async function getZxingReader() {
 }
 
 async function startZxingBarcodeLoop() {
-  zxingScanning = true;
   let reader;
   try {
     reader = await getZxingReader();
@@ -314,33 +312,32 @@ async function startZxingBarcodeLoop() {
     toast('Could not load barcode scanner', 'error');
     return;
   }
-  if (!zxingScanning || !cameraActive) return; // stopped while the library was loading
+  if (!cameraActive) return; // camera was stopped while the library was loading
 
   // TEMPORARY diagnostic - confirms what resolution the camera actually
   // delivered, since "ideal" in getUserMedia is only a request, not a
   // guarantee. Remove once the iPad issue is confirmed fixed.
   console.warn(`Barcode camera actual resolution: ${video.videoWidth}x${video.videoHeight}`);
 
-  // Confirmed on-device: decodeFromVideoElementContinuously is what
-  // actually finds barcodes on this hardware/iOS combination - an
-  // attempt to replace it with a manual reader.decode(video) polling
-  // loop (reasoned from reading the library's source, which suggested
-  // this method could deadlock waiting for a "playing" event) never
-  // once succeeded in testing, while this did. Keeping it, even though
-  // the theoretical concern isn't fully explained.
-  try {
-    reader.decodeFromVideoElementContinuously(video, (result, err) => {
-      if (result) onBarcodeDetected(result.getText());
-      // err is a routine "nothing found in this frame" on almost every
-      // call - that's normal for continuous scanning, not a real failure.
-    }).catch(err => {
-      if (zxingScanning) console.warn('ZXing decode failed:', err);
-    });
-  } catch (err) {
-    console.warn('ZXing API not available as expected:', err);
-    toast('Barcode scanning is not available on this browser - try OCR instead, or add the item manually', 'error');
-    zxingScanning = false;
-  }
+  // decodeFromVideoElementContinuously waits for the video's "playing"
+  // event before it'll start - confirmed on-device (twice) that this
+  // deadlocks forever and never attempts a single decode, since our
+  // video is already playing by the time this attaches (no new
+  // "playing" event ever fires). Driving reader.decode() directly on
+  // our own timer instead actually runs and attempts real decodes every
+  // tick (confirmed via logged NotFoundException errors) - it hasn't
+  // found a barcode successfully yet, but it's the version that's
+  // actually trying, not silently stuck.
+  barcodeLoopHandle = setInterval(() => {
+    if (!cameraActive || video.readyState < 2) return;
+    let result;
+    try {
+      result = reader.decode(video);
+    } catch (err) {
+      return; // no barcode found in this frame - expected on almost every tick
+    }
+    if (result) onBarcodeDetected(result.getText());
+  }, 300);
 }
 
 function startBarcodeLoop() {
@@ -356,10 +353,6 @@ function stopBarcodeLoop() {
   if (barcodeLoopHandle) {
     clearInterval(barcodeLoopHandle);
     barcodeLoopHandle = null;
-  }
-  if (zxingScanning) {
-    zxingScanning = false;
-    zxingReader?.reset();
   }
 }
 
