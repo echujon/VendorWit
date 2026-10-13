@@ -2015,13 +2015,15 @@ function renderItemPerformance(sales, items, vendorFilter) {
   }
 
   const soldRows = Array.from(soldById.values()).sort((a, b) => b.revenue - a.revenue);
-  // "Not sold" is specifically about consignment items that need to go
-  // back to their sub-vendor at the end of the event - items with no
-  // sub-vendor (the main vendor's own stock) aren't consignment and
-  // don't need this reconciliation, so they're excluded here even if
-  // they also never sold.
+  // Every item currently in stock that's never appeared in a sale -
+  // regardless of whether it has a sub-vendor. Items with a sub-vendor
+  // still get called out as "return to vendor" in the row itself (that's
+  // the consignment-reconciliation case this was originally built for),
+  // but items with no sub-vendor (the main vendor's own stock) are no
+  // longer excluded - this is meant to be a full "what's sold vs. what's
+  // still sitting in inventory" report, not just the consignment subset.
   const unsoldRows = items
-    .filter(r => !!r.subVendor && !soldById.has(r.id) && (parseInt(r.quantity, 10) || 0) > 0 && (!vendorFilter || r.subVendor === vendorFilter))
+    .filter(r => !soldById.has(r.id) && (parseInt(r.quantity, 10) || 0) > 0 && (!vendorFilter || r.subVendor === vendorFilter))
     .map(r => ({ name: r.item || r.name || '(no name)', subVendor: r.subVendor || '', quantity: parseInt(r.quantity, 10) || 0, price: r.price || '' }));
 
   soldRowsForExport = soldRows;
@@ -2030,7 +2032,7 @@ function renderItemPerformance(sales, items, vendorFilter) {
   const totalSoldQty = soldRows.reduce((sum, r) => sum + r.quantity, 0);
   const totalRevenue = soldRows.reduce((sum, r) => sum + r.revenue, 0);
   salesReportSummary.innerHTML = `
-    <div class="sales-report-grand-total">${soldRows.length} item${soldRows.length === 1 ? '' : 's'} sold (${totalSoldQty} unit${totalSoldQty === 1 ? '' : 's'}) · $${totalRevenue.toFixed(2)} · ${unsoldRows.length} consignment item${unsoldRows.length === 1 ? '' : 's'} to return</div>
+    <div class="sales-report-grand-total">${soldRows.length} item${soldRows.length === 1 ? '' : 's'} sold (${totalSoldQty} unit${totalSoldQty === 1 ? '' : 's'}) · $${totalRevenue.toFixed(2)} · ${unsoldRows.length} unsold</div>
   `;
 
   const soldHtml = soldRows.length
@@ -2050,17 +2052,17 @@ function renderItemPerformance(sales, items, vendorFilter) {
       <div class="pending-sale-row">
         <div class="pending-sale-info">
           <span class="pending-sale-total">${r.quantity} in stock</span>
-          · <span class="pending-sale-status">Unsold - return to vendor</span>
+          · <span class="pending-sale-status">${r.subVendor ? 'Unsold - return to vendor' : 'Unsold'}</span>
           <div class="pending-sale-items">${esc(r.name)}${r.subVendor ? ` (${esc(r.subVendor)})` : ''}${r.price ? ` · $${esc(r.price)} each` : ''}</div>
         </div>
       </div>
     `).join('')
-    : '<div class="empty-state">No unsold consignment items - everything\'s either sold or isn\'t a sub-vendor\'s consignment item.</div>';
+    : '<div class="empty-state">No unsold items - everything currently in stock has sold at least once.</div>';
 
   salesReportList.innerHTML = `
     <h3 class="sales-report-subheading">Sold</h3>
     ${soldHtml}
-    <h3 class="sales-report-subheading">Unsold Consignment Items (to return)</h3>
+    <h3 class="sales-report-subheading">Unsold</h3>
     ${unsoldHtml}
   `;
 }
@@ -2169,7 +2171,8 @@ function exportItemPerformanceCSV(soldRows, unsoldRows) {
     rows.push(['Sold', `"${r.name.replace(/"/g, '""')}"`, `"${(r.subVendor || '').replace(/"/g, '""')}"`, r.quantity, r.revenue.toFixed(2)]);
   });
   unsoldRows.forEach(r => {
-    rows.push(['Unsold consignment - return to vendor', `"${r.name.replace(/"/g, '""')}"`, `"${(r.subVendor || '').replace(/"/g, '""')}"`, r.quantity, r.price || '']);
+    const status = r.subVendor ? 'Unsold - return to vendor' : 'Unsold';
+    rows.push([status, `"${r.name.replace(/"/g, '""')}"`, `"${(r.subVendor || '').replace(/"/g, '""')}"`, r.quantity, r.price || '']);
   });
   const csv = rows.map(r => r.join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv' });
