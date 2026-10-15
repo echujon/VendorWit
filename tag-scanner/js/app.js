@@ -1559,7 +1559,6 @@ async function renderRecords() {
       </div>
       <div class="record-price">$${esc(r.price || '—')}</div>
       <div class="record-actions">
-        ${!r.sentToStripe ? `<button class="record-btn push-stripe" data-id="${r.id}">→ Stripe</button>` : `<span class="record-btn stripe-sent">✓ Stripe</span>`}
         <button class="record-btn delete" data-id="${r.id}" title="Delete">✕</button>
       </div>
     </div>
