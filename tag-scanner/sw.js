@@ -25,7 +25,6 @@ self.addEventListener('activate', e => {
 // this CACHE constant was bumped by hand - easy to forget, as happened
 // several times in a row here.
 self.addEventListener('fetch', e => {
-  if (e.request.url.includes('api.stripe.com')) return;
   if (e.request.method !== 'GET') return;
 
   e.respondWith(

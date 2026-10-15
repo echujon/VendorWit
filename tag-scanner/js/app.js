@@ -120,7 +120,6 @@ const btnVenmoModalSuccess = document.getElementById('btn-venmo-modal-success');
 const btnNotAMatch = document.getElementById('btn-not-a-match');
 const btnUseSelection = document.getElementById('btn-use-selection');
 const btnSave = document.getElementById('btn-save');
-const btnStripe = document.getElementById('btn-stripe');
 const btnSquare = document.getElementById('btn-square');
 const btnDiscard = document.getElementById('btn-discard');
 const btnExport = document.getElementById('btn-export');
@@ -1240,50 +1239,6 @@ async function detectTagColor(blob) {
   }
 }
 
-// --- Stripe ---
-async function pushToStripe(record) {
-  const { stripeKey } = getSettings();
-  if (!stripeKey) throw new Error('No Stripe secret key configured');
-
-  const priceInCents = Math.round(parseFloat(record.price) * 100);
-  if (isNaN(priceInCents) || priceInCents <= 0) throw new Error('Invalid price');
-
-  // Create product
-  const productRes = await fetch('https://api.stripe.com/v1/products', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${stripeKey}`,
-      'Content-Type': 'application/x-www-form-urlencoded'
-    },
-    body: new URLSearchParams({ name: record.name })
-  });
-  if (!productRes.ok) {
-    const err = await productRes.json().catch(() => ({}));
-    throw new Error(err.error?.message || `Stripe product error ${productRes.status}`);
-  }
-  const product = await productRes.json();
-
-  // Create price
-  const priceRes = await fetch('https://api.stripe.com/v1/prices', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${stripeKey}`,
-      'Content-Type': 'application/x-www-form-urlencoded'
-    },
-    body: new URLSearchParams({
-      product: product.id,
-      unit_amount: String(priceInCents),
-      currency: 'usd'
-    })
-  });
-  if (!priceRes.ok) {
-    const err = await priceRes.json().catch(() => ({}));
-    throw new Error(err.error?.message || `Stripe price error ${priceRes.status}`);
-  }
-  const price = await priceRes.json();
-  return { productId: product.id, priceId: price.id };
-}
-
 // --- Square POS ---
 // Deep-links into the Square Point of Sale app via its documented URL scheme (iOS)
 // / Intent (Android). There's no reliable way for a plain website (as opposed to a
@@ -1497,32 +1452,6 @@ btnSave.addEventListener('click', async () => {
   toast('Saved!', 'success');
 });
 
-btnStripe.addEventListener('click', async () => {
-  const data = await attachVisualData(collectFormData());
-  if (!data.name || !data.price) { toast('Name and price required', 'error'); return; }
-  btnStripe.disabled = true;
-  showStatus('Pushing to Stripe...');
-  try {
-    const ids = await pushToStripe(data);
-    const editId = resultCard.dataset.editId || null;
-    const stripeFields = { ...data, stripeId: ids.productId, priceId: ids.priceId, sentToStripe: true };
-    if (editId) {
-      await updateRecord(editId, stripeFields);
-    } else {
-      await saveRecord(stripeFields);
-    }
-    resetScanArea();
-    await renderRecords();
-    hideStatus();
-    toast('Saved + pushed to Stripe!', 'success');
-  } catch (err) {
-    hideStatus();
-    toast('Stripe error: ' + err.message, 'error');
-  } finally {
-    btnStripe.disabled = false;
-  }
-});
-
 btnSquare.addEventListener('click', () => {
   const data = collectFormData();
   if (!data.name || !data.price) { toast('Name and price required', 'error'); return; }
@@ -1555,7 +1484,7 @@ async function renderRecords() {
     <div class="record-item" data-id="${r.id}">
       <div class="record-info">
         <div class="record-name">${esc(r.item || r.name || '(no name)')}</div>
-        <div class="record-meta">${esc(r.uniqueId || '')}${r.uniqueId ? ' · ' : ''}${r.subVendor ? `${esc(r.subVendor)} · ` : ''}${r.tagColor ? `${esc(r.tagColor)} tag · ` : ''}${r.quantity ? `Qty ${esc(r.quantity)} · ` : ''}${esc(r.location || '')}${r.location ? ' · ' : ''}${new Date(r.createdAt).toLocaleDateString()} ${r.sentToStripe ? '· In Stripe' : ''}</div>
+        <div class="record-meta">${esc(r.uniqueId || '')}${r.uniqueId ? ' · ' : ''}${r.subVendor ? `${esc(r.subVendor)} · ` : ''}${r.tagColor ? `${esc(r.tagColor)} tag · ` : ''}${r.quantity ? `Qty ${esc(r.quantity)} · ` : ''}${esc(r.location || '')}${r.location ? ' · ' : ''}${new Date(r.createdAt).toLocaleDateString()}</div>
       </div>
       <div class="record-price">$${esc(r.price || '—')}</div>
       <div class="record-actions">
@@ -1583,27 +1512,6 @@ recordsList.addEventListener('click', async e => {
   if (btn?.classList.contains('delete')) {
     await deleteRecord(id);
     await renderRecords();
-    return;
-  }
-
-  if (btn?.classList.contains('push-stripe')) {
-    const record = getCachedRecords().find(r => r.id === id);
-    if (!record) return;
-    btn.disabled = true;
-    btn.textContent = '...';
-    showStatus('Pushing to Stripe...');
-    try {
-      const ids = await pushToStripe(record);
-      await updateRecord(id, { stripeId: ids.productId, priceId: ids.priceId, sentToStripe: true });
-      await renderRecords();
-      hideStatus();
-      toast('Pushed to Stripe!', 'success');
-    } catch (err) {
-      hideStatus();
-      toast('Stripe error: ' + err.message, 'error');
-      btn.disabled = false;
-      btn.textContent = '→ Stripe';
-    }
     return;
   }
 

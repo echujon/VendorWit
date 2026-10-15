@@ -39,15 +39,6 @@
     </div>
 
     <div class="settings-section">
-      <h2>Stripe</h2>
-      <p>Used to create products in your Stripe account. Use your <strong>secret</strong> key (sk_live_... or sk_test_...). Stored only in your browser — never sent anywhere except Stripe's API.</p>
-      <div class="settings-field">
-        <label for="stripe-key">Stripe Secret Key</label>
-        <input type="password" id="stripe-key" placeholder="sk_live_... or sk_test_...">
-      </div>
-    </div>
-
-    <div class="settings-section">
       <h2>Square Point of Sale</h2>
       <p>Deep-links into the Square Point of Sale app on this phone to charge the item's price. Only works on iOS/Android with the Square POS app installed — get your Application ID at developer.squareup.com/apps.</p>
       <p><strong>Use this for a solo vendor with just a phone and a Square Reader</strong> (the small card-swipe/tap dongle). A Reader has no Terminal API support of its own — it only works through Square's own POS app on the phone, which is exactly what this deep link opens.</p>
@@ -321,7 +312,6 @@
     const settings = getSettings();
     document.getElementById('anthropic-key').value = settings.anthropicKey || '';
     document.getElementById('gemini-key').value = localStorage.getItem('gemini_api_key') || '';
-    document.getElementById('stripe-key').value = settings.stripeKey || '';
     document.getElementById('square-app-id').value = settings.squareAppId || '';
     document.getElementById('venmo-username').value = settings.venmoUsername || '';
     document.getElementById('require-terminal-only').checked = !!settings.requireTerminalOnly;
@@ -329,7 +319,6 @@
     document.getElementById('btn-save-settings').addEventListener('click', () => {
       saveSettings({
         anthropicKey: document.getElementById('anthropic-key').value.trim(),
-        stripeKey: document.getElementById('stripe-key').value.trim(),
         squareAppId: document.getElementById('square-app-id').value.trim(),
         venmoUsername: document.getElementById('venmo-username').value.trim(),
         requireTerminalOnly: document.getElementById('require-terminal-only').checked

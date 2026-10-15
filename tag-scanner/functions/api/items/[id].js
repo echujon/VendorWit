@@ -11,7 +11,6 @@ import { rowToRecord } from '../../_shared/items.js';
 const COLUMN_BY_FIELD = {
   uniqueId: 'unique_id', name: 'name', item: 'item', brand: 'brand', size: 'size',
   color: 'color', tagColor: 'tag_color', subVendor: 'sub_vendor', price: 'price', quantity: 'quantity', location: 'bin_location',
-  stripeId: 'stripe_id', priceId: 'price_id', sentToStripe: 'sent_to_stripe',
   photoDataUrl: 'photo_data_url'
 };
 
@@ -26,7 +25,7 @@ export async function onRequestPatch(context) {
   for (const [field, column] of Object.entries(COLUMN_BY_FIELD)) {
     if (field in body) {
       sets.push(`${column} = ?`);
-      values.push(field === 'sentToStripe' ? (body[field] ? 1 : 0) : body[field]);
+      values.push(body[field]);
     }
   }
   if ('embeddingGemini' in body) { sets.push('embedding_gemini = ?'); values.push(JSON.stringify(body.embeddingGemini)); }
