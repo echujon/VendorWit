@@ -92,7 +92,19 @@ const btnEditMatch = document.getElementById('btn-edit-match');
 const btnSellOne = document.getElementById('btn-sell-one');
 const btnSquareMatch = document.getElementById('btn-square-match');
 const btnVenmoMatch = document.getElementById('btn-venmo-match');
+const btnPrintSticker = document.getElementById('btn-print-sticker');
 const venmoQr = document.getElementById('venmo-qr');
+
+// Printing a sticker hands an image to the OS share sheet (navigator.share
+// with a file) rather than talking to the Phomemo printer directly - that
+// keeps this working on iPhone/iPad too, since Web Bluetooth (the only way
+// to talk to the printer directly from a browser) doesn't exist on Safari
+// at all. The tradeoff: it's "share to Print Master, then print from
+// there" rather than one-tap automatic printing. Only shown when the
+// browser actually supports sharing files at all.
+if (navigator.canShare && navigator.canShare({ files: [new File([''], 'test.png', { type: 'image/png' })] })) {
+  btnPrintSticker.classList.remove('hidden');
+}
 const btnAddToCart = document.getElementById('btn-add-to-cart');
 const reviewSaleBar = document.getElementById('review-sale-bar');
 const reviewSaleSummary = document.getElementById('review-sale-summary');
@@ -1370,6 +1382,26 @@ btnVenmoMatch.addEventListener('click', async () => {
     venmoQr.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   } catch (err) {
     toast('Venmo error: ' + err.message, 'error');
+  }
+});
+
+// The sticker encodes the item's uniqueId (not a Venmo-style link) - that's
+// exactly what a rescan of the printed sticker later looks up via
+// findByUniqueId, same as scanning the item's original tag would.
+btnPrintSticker.addEventListener('click', async () => {
+  if (!matchedRecord) return;
+  const code = matchedRecord.uniqueId || matchedRecord.id;
+  try {
+    const dataUrl = await QRCode.toDataURL(code, { width: 400 });
+    const blob = await (await fetch(dataUrl)).blob();
+    const file = new File([blob], `sticker-${code}.png`, { type: 'image/png' });
+    if (!navigator.canShare({ files: [file] })) {
+      toast('Sharing images is not supported on this browser', 'error');
+      return;
+    }
+    await navigator.share({ files: [file], title: `Sticker - ${matchedRecord.item || matchedRecord.name || code}` });
+  } catch (err) {
+    if (err.name !== 'AbortError') toast('Print sticker error: ' + err.message, 'error');
   }
 });
 
