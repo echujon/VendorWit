@@ -973,6 +973,63 @@ async function runOCR(blob) {
 // Reason the last Gemini OCR attempt failed, shown to the user by runOCR.
 let lastGeminiError = '';
 
+// Gemini models to try in order. Google sometimes returns 503 "high demand"
+// (or 429/500) for one model while others are fine, so on those errors we
+// retry briefly and then move to the next model instead of dropping
+// straight to Tesseract. Put the preferred model first.
+const GEMINI_MODELS = ['gemini-3.1-flash-lite', 'gemini-3.5-flash-lite', 'gemini-flash-latest'];
+// Errors worth retrying or trying another model for: overloaded, rate
+// limited, server error, or the model no longer existing. Anything else
+// (bad key, bad request) would fail the same way on every model.
+const GEMINI_RETRYABLE = new Set([404, 429, 500, 502, 503, 504]);
+const GEMINI_TIMEOUT_MS = 20000;
+
+async function geminiGenerateContent(apiKey, requestBody) {
+  const body = JSON.stringify(requestBody);
+  let lastErr;
+  for (let i = 0; i < GEMINI_MODELS.length; i++) {
+    const model = GEMINI_MODELS[i];
+    // One quick retry on the preferred model; "high demand" spikes are
+    // often momentary. Fallback models get a single attempt each.
+    const attempts = i === 0 ? 2 : 1;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      if (i > 0 && attempt === 1) showStatus(`Gemini busy, trying ${model}...`);
+      let response;
+      try {
+        response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body,
+            signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
+          }
+        );
+      } catch (err) {
+        // Network failure or timeout: treat like a busy server.
+        lastErr = new Error(`${model}: ${err.name === 'TimeoutError' ? 'timed out' : err.message}`);
+        console.warn('Gemini request failed:', lastErr.message);
+        continue;
+      }
+      if (response.ok) {
+        if (i > 0 || attempt > 1) console.log(`[gemini] succeeded with ${model} (attempt ${attempt})`);
+        return response.json();
+      }
+      // The error body isn't always JSON (e.g. a proxy or network page), so
+      // read it as text and only then try to pull Google's message out.
+      const text = await response.text();
+      let message = '';
+      try { message = JSON.parse(text).error?.message || ''; } catch { /* not JSON */ }
+      lastErr = new Error(`HTTP ${response.status}${message ? ` - ${message}` : (response.statusText ? ` ${response.statusText}` : '')}`);
+      console.warn(`Gemini ${model} attempt ${attempt} failed:`, lastErr.message);
+      if (!GEMINI_RETRYABLE.has(response.status)) throw lastErr;
+      if (response.status === 404) break; // model gone - no point retrying it
+      if (attempt < attempts) await new Promise(r => setTimeout(r, 800));
+    }
+  }
+  throw lastErr || new Error('all Gemini models failed');
+}
+
 async function runGeminiOCR(blob) {
   showStatus('Extracting text with Gemini...');
   lastGeminiError = '';
@@ -986,47 +1043,20 @@ async function runGeminiOCR(blob) {
 
     const base64 = await blobToBase64(blob);
 
-    // Call Gemini API directly
-    const response = await fetch(
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=' + apiKey,
-  {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
+    const data = await geminiGenerateContent(apiKey, {
       contents: [
         {
           parts: [
-            {
-              // 1. Changed inline_data and mime_type to camelCase for raw JSON
-              inlineData: {
-                mimeType: 'image/jpeg',
-                data: base64,
-              },
-            },
+            { inlineData: { mimeType: 'image/jpeg', data: base64 } },
             {
               text: 'Extract all visible text from this image. Return only the text, line by line. Be accurate with handwriting. Prices are often handwritten with the cents as a small superscript next to or above the dollar amount (e.g. a large "27" with a small "00" beside it) — read these as a decimal price like "$27.00", not as a single whole number like "2700".',
             },
           ],
         },
       ],
-      // 2. Moved mediaResolution inside generationConfig where the JSON parser expects it
-      generationConfig: {
-        mediaResolution: 'MEDIA_RESOLUTION_LOW',
-      }
-    }),
-  }
-);
+      generationConfig: { mediaResolution: 'MEDIA_RESOLUTION_LOW' },
+    });
 
-    if (!response.ok) {
-      // The error body isn't always JSON (e.g. a proxy or network page), so
-      // read it as text and only then try to pull Google's message out.
-      const body = await response.text();
-      let message = '';
-      try { message = JSON.parse(body).error?.message || ''; } catch { /* not JSON */ }
-      throw new Error(`HTTP ${response.status}${message ? ` - ${message}` : (response.statusText ? ` ${response.statusText}` : '')}`);
-    }
-
-    const data = await response.json();
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
     if (!text) {
       // A 200 with no text usually means the response was blocked or empty;
@@ -1093,27 +1123,21 @@ async function embedImageGemini(blob) {
 
     const base64 = await blobToBase64(blob);
 
-    const describeRes = await fetch(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=' + apiKey,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [
-              { inlineData: { mimeType: 'image/jpeg', data: base64 } },
-              { text: 'Describe ONLY theitem that is the main subject of this photo — its visual appearance for the purpose of matching it against photos of other similar items: shape, color palette, pattern, texture, and any distinctive marks. Do not mention the background, surface, hand, or anything else the item is resting on or being held by — describe the item as if it were isolated on its own. Be specific and consistent.' }
-            ]
-          }],
-          generationConfig: { mediaResolution: 'MEDIA_RESOLUTION_LOW' }
-        })
-      }
-    );
-    if (!describeRes.ok) {
-      console.warn('Gemini vision call failed:', describeRes.status, await describeRes.text());
+    let describeData;
+    try {
+      describeData = await geminiGenerateContent(apiKey, {
+        contents: [{
+          parts: [
+            { inlineData: { mimeType: 'image/jpeg', data: base64 } },
+            { text: 'Describe ONLY theitem that is the main subject of this photo — its visual appearance for the purpose of matching it against photos of other similar items: shape, color palette, pattern, texture, and any distinctive marks. Do not mention the background, surface, hand, or anything else the item is resting on or being held by — describe the item as if it were isolated on its own. Be specific and consistent.' }
+          ]
+        }],
+        generationConfig: { mediaResolution: 'MEDIA_RESOLUTION_LOW' }
+      });
+    } catch (err) {
+      console.warn('Gemini vision call failed:', err.message);
       return null;
     }
-    const describeData = await describeRes.json();
     const description = describeData.candidates?.[0]?.content?.parts?.[0]?.text || '';
     if (!description.trim()) return null;
 
