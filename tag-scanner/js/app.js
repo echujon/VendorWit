@@ -957,6 +957,11 @@ async function runOCR(blob) {
     return geminiResult;
   }
   console.log(`[perf] Gemini OCR unavailable/failed after ${Math.round(performance.now() - tGemini)}ms, falling back to Tesseract`);
+  // Surface why Gemini didn't run instead of failing silently, so a bad or
+  // missing key, quota limit or model problem is visible on the device.
+  if (lastGeminiError) {
+    toast(`Gemini OCR failed: ${lastGeminiError} — using Tesseract instead`, 'error', 12000);
+  }
   // Fall back to Tesseract.js
   showStatus('Falling back to Tesseract OCR...');
   const tTesseract = performance.now();
@@ -965,12 +970,17 @@ async function runOCR(blob) {
   return text;
 }
 
+// Reason the last Gemini OCR attempt failed, shown to the user by runOCR.
+let lastGeminiError = '';
+
 async function runGeminiOCR(blob) {
   showStatus('Extracting text with Gemini...');
+  lastGeminiError = '';
   try {
     const apiKey = localStorage.getItem('gemini_api_key');
     if (!apiKey) {
       console.warn('No Gemini API key configured');
+      lastGeminiError = 'no Gemini API key saved on this device (add it in Settings)';
       return null;
     }
 
@@ -1008,13 +1018,25 @@ async function runGeminiOCR(blob) {
 );
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(`Gemini API error: ${error.error?.message || response.statusText}`);
+      // The error body isn't always JSON (e.g. a proxy or network page), so
+      // read it as text and only then try to pull Google's message out.
+      const body = await response.text();
+      let message = '';
+      try { message = JSON.parse(body).error?.message || ''; } catch { /* not JSON */ }
+      throw new Error(`HTTP ${response.status}${message ? ` - ${message}` : (response.statusText ? ` ${response.statusText}` : '')}`);
     }
 
     const data = await response.json();
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
     if (!text) {
+      // A 200 with no text usually means the response was blocked or empty;
+      // report that rather than treating it as a successful blank read.
+      const reason = data.promptFeedback?.blockReason || data.candidates?.[0]?.finishReason;
+      if (reason && reason !== 'STOP') {
+        lastGeminiError = `no text returned (${reason})`;
+        console.warn('Gemini OCR returned no text:', reason);
+        return null;
+      }
       return '';
     }
 
@@ -1025,6 +1047,7 @@ async function runGeminiOCR(blob) {
       .join('\n');
   } catch (err) {
     console.warn('Gemini OCR failed:', err);
+    lastGeminiError = err?.message || String(err);
     return null;
   }
 }
@@ -2506,12 +2529,12 @@ function showStatus(msg) {
 function hideStatus() { statusBar.classList.remove('visible'); }
 
 let toastTimer;
-function toast(msg, type = '') {
+function toast(msg, type = '', duration = 3000) {
   const el = document.getElementById('toast');
   el.textContent = msg;
   el.className = 'show' + (type ? ' ' + type : '');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { el.className = ''; }, 3000);
+  toastTimer = setTimeout(() => { el.className = ''; }, duration);
 }
 
 function esc(str) {
