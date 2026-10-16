@@ -221,12 +221,20 @@
       <h2>Review Sale</h2>
       <div id="review-cart-list"></div>
       <div id="review-total-display"></div>
-      <div class="modal-actions" style="flex-wrap:wrap;">
+      <div class="modal-actions" id="review-actions-main" style="flex-wrap:wrap;">
         <button class="btn btn-primary" id="btn-review-terminal">Charge via Terminal</button>
         <button class="btn btn-secondary" id="btn-review-venmo">Venmo QR</button>
         <button class="btn btn-secondary" id="btn-review-square">Send to Square POS</button>
         <button class="btn btn-primary" id="btn-review-complete">Cash</button>
+        <button class="btn btn-primary" id="btn-review-sold">Sold</button>
         <button class="btn btn-secondary" id="btn-review-clear">Clear Cart</button>
+      </div>
+      <!-- Quick bypass: skip Venmo/Terminal/Square entirely, just log which
+           way it was paid for reporting. No Square API calls either way. -->
+      <div class="modal-actions hidden" id="review-actions-sold" style="flex-wrap:wrap;">
+        <button class="btn btn-primary" id="btn-review-sold-cash">Cash</button>
+        <button class="btn btn-primary" id="btn-review-sold-card">Card</button>
+        <button class="btn btn-secondary" id="btn-review-sold-back">Back</button>
       </div>
     </div>
   </div>
@@ -275,6 +283,7 @@
           <option value="cash">Cash</option>
           <option value="venmo">Venmo</option>
           <option value="card">Card (Terminal)</option>
+          <option value="other">Other / Quick Sale</option>
         </select>
         <select id="sales-report-sort">
           <option value="date-desc">Newest first</option>

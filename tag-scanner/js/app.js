@@ -114,6 +114,12 @@ const queueModalList = document.getElementById('queue-modal-list');
 const btnReviewVenmo = document.getElementById('btn-review-venmo');
 const btnReviewSquare = document.getElementById('btn-review-square');
 const btnReviewComplete = document.getElementById('btn-review-complete');
+const btnReviewSold = document.getElementById('btn-review-sold');
+const reviewActionsMain = document.getElementById('review-actions-main');
+const reviewActionsSold = document.getElementById('review-actions-sold');
+const btnReviewSoldCash = document.getElementById('btn-review-sold-cash');
+const btnReviewSoldCard = document.getElementById('btn-review-sold-card');
+const btnReviewSoldBack = document.getElementById('btn-review-sold-back');
 const btnReviewClear = document.getElementById('btn-review-clear');
 const venmoModal = document.getElementById('venmo-modal');
 const venmoModalTotal = document.getElementById('venmo-modal-total');
@@ -1294,6 +1300,21 @@ async function sellOne() {
   matchedRecord = { ...matchedRecord, quantity: String(newQty) };
   document.getElementById('match-quantity').textContent = String(newQty);
   await renderRecords();
+
+  // Sell 1 is a one-tap bypass for when staff don't want to pick a
+  // payment method (Cash/Venmo/Terminal) first - it still records into
+  // the sales table so it shows up in the Sales Report, just tagged
+  // 'other' instead of a specific method. The inventory decrement above
+  // already happened, so this calls createSale() directly rather than
+  // recordSale() (which would decrement inventory a second time).
+  const item = { id: matchedRecord.id, name: matchedRecord.item || matchedRecord.name, price: matchedRecord.price, quantity: 1, subVendor: matchedRecord.subVendor || '' };
+  try {
+    await createSale({ items: [item], total: (parseFloat(matchedRecord.price) || 0).toFixed(2), paymentMethod: 'other' });
+  } catch (err) {
+    console.warn('Failed to record sale for reporting:', err);
+    toast('Sold, but failed to log it for reporting', 'error');
+  }
+
   toast(`Sold — ${newQty} left`, 'success');
 
   const { squareAppId } = getSettings();
@@ -1723,6 +1744,8 @@ function openReviewModal() {
   btnReviewVenmo.style.display = display;
   btnReviewSquare.style.display = display;
   btnReviewComplete.style.display = display;
+  reviewActionsMain.classList.remove('hidden');
+  reviewActionsSold.classList.add('hidden');
   reviewModal.classList.remove('hidden');
 }
 
@@ -1847,7 +1870,7 @@ let salesReportView = 'sale'; // 'sale' or 'item'
 let soldRowsForExport = [];
 let unsoldRowsForExport = [];
 
-const PAYMENT_METHOD_LABELS = { cash: 'Cash', venmo: 'Venmo', card: 'Card (Terminal)' };
+const PAYMENT_METHOD_LABELS = { cash: 'Cash', venmo: 'Venmo', card: 'Card (Terminal)', other: 'Other / Quick Sale' };
 const NO_SUB_VENDOR = '(no sub-vendor)';
 
 function paymentMethodLabel(method) {
@@ -2398,6 +2421,29 @@ btnReviewComplete.addEventListener('click', () => {
   if (!cart.length) return;
   closeReviewModal();
   completeCashSale();
+});
+
+// "Sold" is a quick bypass for when staff just want to log the sale as
+// done without going through Venmo QR, the Terminal queue, or Square's
+// cash-payment sync (completeCashSale) - completeSale() here only
+// decrements inventory and writes the sales-report row, same shape as
+// every other payment method, just without any of those extra steps.
+btnReviewSold.addEventListener('click', () => {
+  if (!cart.length) return;
+  reviewActionsMain.classList.add('hidden');
+  reviewActionsSold.classList.remove('hidden');
+});
+btnReviewSoldBack.addEventListener('click', () => {
+  reviewActionsSold.classList.add('hidden');
+  reviewActionsMain.classList.remove('hidden');
+});
+btnReviewSoldCash.addEventListener('click', () => {
+  closeReviewModal();
+  completeSale('cash');
+});
+btnReviewSoldCard.addEventListener('click', () => {
+  closeReviewModal();
+  completeSale('card');
 });
 
 btnReviewClear.addEventListener('click', () => {
