@@ -595,7 +595,16 @@ main { flex: 1; padding: 1.25rem; padding-bottom: 5rem; display: flex; flex-dire
 }
 #toast.show { transform: translateX(-50%) translateY(0); }
 #toast.success { background: var(--success); }
-#toast.error { background: var(--danger); }
+#toast.error {
+  background: var(--danger);
+  /* Error text (e.g. an API message) can be long; let it wrap on narrow
+     screens instead of running off the edge. */
+  white-space: normal;
+  width: max-content;
+  max-width: calc(100vw - 2rem);
+  border-radius: 1rem;
+  text-align: center;
+}
 
 /* OCR raw text */
 .ocr-raw {
