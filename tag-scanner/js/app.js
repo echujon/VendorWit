@@ -44,9 +44,9 @@ let scanMode = 'ocr';
 
 // Native BarcodeDetector only exists on Chrome/Android today - iOS Safari
 // ships it disabled. Rather than gate the Barcode button on that (which
-// would hide it entirely on iPhone/iPad), it's always shown; the
-// detection loop below picks native when available and falls back to the
-// ZXing-js library (lazy-loaded, see getZxingReader) everywhere else.
+// would hide it entirely on iPhone/iPad), it's always shown; see
+// ensureBarcodeDetector below for how every other browser gets the same
+// API via a lazy-loaded WASM polyfill.
 btnScanModeBarcode.classList.remove('hidden');
 
 function setScanMode(mode) {
@@ -254,17 +254,27 @@ function captureFrame() {
 // it's in frame - matching how the rest of the queue/terminal work in
 // this app favors fast, low-friction flows over extra taps.
 //
-// Two engines, picked automatically:
-// - Native BarcodeDetector - fast, built into the browser, but only
-//   Chrome/Android ships it enabled today.
-// - ZXing-js (lazy-loaded from a CDN, only when actually needed) - pure
-//   JS, works everywhere including Safari/iOS, so this is what covers
-//   iPhone/iPad. Slower per-frame than the native API, which is fine
-//   here since it's still just scanning a live preview, not blocking
-//   anything.
+// One code path for every platform: the standard BarcodeDetector API,
+// native where the browser ships it (Chrome/Android), and a WASM-backed
+// polyfill (github.com/Sec-ant/barcode-detector, zxing-wasm under the
+// hood, lazy-loaded from a CDN) everywhere else, including Safari/iOS.
+// This replaced an earlier pure-JS ZXing-js integration that never
+// reached a reliably-working state on iOS - a video-lifecycle deadlock
+// in one of its methods, then persistent getImageData canvas failures
+// once that was fixed. The WASM polyfill implements the exact same spec
+// interface as the native API (including accepting a canvas, which
+// ZXing-js's internal plumbing did not), so it's a drop-in rather than a
+// second, differently-shaped engine to maintain.
 let barcodeDetector = null;
 let barcodeLoopHandle = null;
-let zxingReader = null;
+let barcodeDetectorReady = ('BarcodeDetector' in window) ? Promise.resolve() : null;
+
+function ensureBarcodeDetector() {
+  if (!barcodeDetectorReady) {
+    barcodeDetectorReady = import('https://cdn.jsdelivr.net/npm/barcode-detector@3.2.2/dist/es/polyfill.js');
+  }
+  return barcodeDetectorReady;
+}
 
 // The on-screen guide (.scan-frame, see style.css) only covers 80% width
 // / 60% height of the preview, centered - decoding the full video frame
@@ -304,8 +314,18 @@ function onBarcodeDetected(rawValue) {
   });
 }
 
-function startNativeBarcodeLoop() {
+async function startBarcodeLoop() {
+  stopBarcodeLoop();
+  try {
+    await ensureBarcodeDetector();
+  } catch (err) {
+    console.warn('Failed to load barcode scanner:', err);
+    toast('Could not load barcode scanner', 'error');
+    return;
+  }
+  if (!cameraActive) return; // camera was stopped while the polyfill was loading
   if (!barcodeDetector) barcodeDetector = new BarcodeDetector();
+
   barcodeLoopHandle = setInterval(async () => {
     if (!cameraActive || video.readyState < 2) return;
     const region = getBarcodeScanRegionCanvas();
@@ -321,80 +341,11 @@ function startNativeBarcodeLoop() {
   }, 300);
 }
 
-async function getZxingReader() {
-  if (!zxingReader) {
-    const { BrowserMultiFormatReader, DecodeHintType } = await import('https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/+esm');
-    // Default decode() is tuned for speed over thoroughness - fine for a
-    // clean, flat, well-lit barcode, but a phone/tablet camera frame
-    // (motion blur, slight angle, uneven lighting) needs the more
-    // exhaustive TRY_HARDER pass to actually find the code, confirmed
-    // on-device: without this, decode() reliably threw NotFoundException
-    // on every single attempt even with a real barcode held steady in frame.
-    const hints = new Map();
-    hints.set(DecodeHintType.TRY_HARDER, true);
-    zxingReader = new BrowserMultiFormatReader(hints);
-  }
-  return zxingReader;
-}
-
-async function startZxingBarcodeLoop() {
-  let reader;
-  try {
-    reader = await getZxingReader();
-  } catch (err) {
-    console.warn('Failed to load barcode scanning library:', err);
-    toast('Could not load barcode scanner', 'error');
-    return;
-  }
-  if (!cameraActive) return; // camera was stopped while the library was loading
-
-  // Drives reader.decode() directly on our own timer, rather than any of
-  // ZXing's decodeFromVideo*() helpers - those wait for the video
-  // element's "playing" event before they'll start, which never fires
-  // again on a video that's already playing (ours always is, since
-  // startCamera already has it running by the time this attaches), so
-  // they deadlock forever and never attempt a single decode. decode()
-  // is the low-level primitive instead: one decode attempt against
-  // whatever frame is current right now, no lifecycle waiting. Finding
-  // an actual barcode can take a few tries, same as any barcode
-  // scanner - that's normal, not a bug.
-  barcodeLoopHandle = setInterval(() => {
-    if (!cameraActive || video.readyState < 2) return;
-    let result;
-    try {
-      result = reader.decode(video);
-    } catch (err) {
-      return; // no barcode found in this frame - expected on almost every tick
-    }
-    if (result) onBarcodeDetected(result.getText());
-  }, 300);
-}
-
-function startBarcodeLoop() {
-  stopBarcodeLoop();
-  if ('BarcodeDetector' in window) {
-    startNativeBarcodeLoop();
-  } else {
-    startZxingBarcodeLoop();
-  }
-}
-
 function stopBarcodeLoop() {
   if (barcodeLoopHandle) {
     clearInterval(barcodeLoopHandle);
     barcodeLoopHandle = null;
   }
-  // ZXing caches its internal capture canvas (reader.captureCanvas) and
-  // only ever creates it once - it never resizes it for a later camera
-  // session with different actual video dimensions (common, since
-  // getUserMedia's "ideal" constraints aren't guaranteed to produce the
-  // same resolution every time). Without resetting, decode() keeps
-  // drawing into a stale, wrong-sized canvas on the next scan and
-  // getImageData starts failing persistently - confirmed on-device:
-  // this is exactly why it worked once, then never again. reset() is
-  // safe to call even if a native BarcodeDetector was used instead -
-  // zxingReader is null until ZXing is actually loaded.
-  zxingReader?.reset();
 }
 
 // A decoded barcode is a definitive ID, so it's checked against existing
