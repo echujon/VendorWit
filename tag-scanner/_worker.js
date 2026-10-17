@@ -27,6 +27,7 @@ import * as queueActiveSales from './functions/api/queue/active-sales.js';
 import * as queueActiveSalesById from './functions/api/queue/active-sales/[id].js';
 import * as queueActiveSalesKeep from './functions/api/queue/active-sales/keep.js';
 import * as debugSquare from './functions/api/debug-square.js';
+import * as debugSquareTax from './functions/api/debug-square-tax.js';
 import * as orgs from './functions/api/orgs.js';
 import * as items from './functions/api/items.js';
 import * as itemsById from './functions/api/items/[id].js';
@@ -68,6 +69,9 @@ export default {
 
     if (pathname === '/api/debug-square' && method === 'GET') {
       return debugSquare.onRequestGet(context);
+    }
+    if (pathname === '/api/debug-square-tax' && method === 'GET') {
+      return debugSquareTax.onRequestGet(context);
     }
 
     if (pathname === '/api/queue/connect' && method === 'GET') {
