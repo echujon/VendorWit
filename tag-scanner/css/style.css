@@ -572,6 +572,19 @@ main { flex: 1; padding: 1.25rem; padding-bottom: 5rem; display: flex; flex-dire
 
 /* Tables only ever scroll sideways in their own wrapper, never the page -
    the modal itself stays a normal vertical scroll. */
+.records-search {
+  width: 100%;
+  padding: 0.75rem;
+  margin-bottom: 0.875rem;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  font-size: 1rem;
+  color: var(--text);
+  background: var(--bg);
+  transition: border-color 0.15s;
+}
+.records-search:focus { outline: none; border-color: var(--brand); }
+
 .sales-report-table-wrap { width: 100%; overflow-x: auto; }
 .sales-report-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
 .sales-report-table th, .sales-report-table td {

@@ -37,6 +37,7 @@ const otherFieldsLabel = document.getElementById('other-fields-label');
 const otherFieldsDisplay = document.getElementById('other-fields-display');
 const matchOtherFields = document.getElementById('match-other-fields');
 const recordsList = document.getElementById('records-list');
+const recordsSearchInput = document.getElementById('records-search');
 const scanOverlay = document.querySelector('.scan-overlay');
 const btnScanModeOcr = document.getElementById('btn-scan-mode-ocr');
 const btnScanModeImage = document.getElementById('btn-scan-mode-image');
@@ -1491,24 +1492,72 @@ function resetScanArea() {
 }
 
 // --- Records ---
-async function renderRecords() {
-  const records = await getRecords();
+let recordsSort = { field: 'date', dir: 'desc' };
+let recordsSearchQuery = '';
+
+function recordMatchesSearch(r, query) {
+  if (!query) return true;
+  const haystack = [r.uniqueId, r.name, r.item, r.brand, r.size, r.color, r.subVendor, r.tagColor, r.location]
+    .join(' ').toLowerCase();
+  return haystack.includes(query);
+}
+
+function renderRecordsList(records) {
+  const query = recordsSearchQuery.trim().toLowerCase();
+  const filtered = records.filter(r => recordMatchesSearch(r, query));
+
   if (!records.length) {
     recordsList.innerHTML = '<div class="empty-state">No records yet — scan a tag to get started.</div>';
     return;
   }
-  recordsList.innerHTML = records.map(r => `
-    <div class="record-item" data-id="${r.id}">
-      <div class="record-info">
-        <div class="record-name">${esc(r.item || r.name || '(no name)')}</div>
-        <div class="record-meta">${esc(r.uniqueId || '')}${r.uniqueId ? ' · ' : ''}${r.subVendor ? `${esc(r.subVendor)}${r.returned ? ' (returned)' : ''} · ` : ''}${r.tagColor ? `${esc(r.tagColor)} tag · ` : ''}${r.quantity ? `Qty ${esc(r.quantity)} · ` : ''}${esc(r.location || '')}${r.location ? ' · ' : ''}${new Date(r.createdAt).toLocaleDateString()}</div>
-      </div>
-      <div class="record-price">$${esc(r.price || '—')}</div>
-      <div class="record-actions">
-        <button class="record-btn delete" data-id="${r.id}" title="Delete">✕</button>
-      </div>
+  if (!filtered.length) {
+    recordsList.innerHTML = '<div class="empty-state">No records match your search.</div>';
+    return;
+  }
+
+  const rows = sortRows(filtered, recordsSort, {
+    id: r => r.uniqueId || '',
+    item: r => r.item || r.name || '',
+    subVendor: r => r.subVendor || '',
+    price: r => parseFloat(r.price) || 0,
+    quantity: r => parseInt(r.quantity, 10) || 0,
+    location: r => r.location || '',
+    date: r => new Date(r.createdAt).getTime() || 0
+  });
+
+  recordsList.innerHTML = `
+    <div class="sales-report-table-wrap">
+      <table class="sales-report-table">
+        <thead><tr>
+          ${sortTh('ID', 'id', recordsSort, 'records')}
+          ${sortTh('Item', 'item', recordsSort, 'records')}
+          ${sortTh('Sub-vendor', 'subVendor', recordsSort, 'records')}
+          ${sortTh('Price', 'price', recordsSort, 'records')}
+          ${sortTh('Qty', 'quantity', recordsSort, 'records')}
+          ${sortTh('Location', 'location', recordsSort, 'records')}
+          ${sortTh('Date', 'date', recordsSort, 'records')}
+          <th></th>
+        </tr></thead>
+        <tbody>${rows.map(r => `
+          <tr class="record-row" data-id="${r.id}">
+            <td>${esc(r.uniqueId || '—')}</td>
+            <td>${esc(r.item || r.name || '(no name)')}</td>
+            <td>${esc(r.subVendor || '—')}${r.subVendor && r.returned ? ' (returned)' : ''}</td>
+            <td>${r.price ? `$${esc(r.price)}` : '—'}</td>
+            <td>${esc(r.quantity || '—')}</td>
+            <td>${esc(r.location || '—')}</td>
+            <td>${new Date(r.createdAt).toLocaleDateString()}</td>
+            <td><button class="record-btn delete" data-id="${r.id}" title="Delete">✕</button></td>
+          </tr>
+        `).join('')}</tbody>
+      </table>
     </div>
-  `).join('');
+  `;
+}
+
+async function renderRecords() {
+  const records = await getRecords();
+  renderRecordsList(records);
 }
 
 function viewRecord(id) {
@@ -1521,10 +1570,17 @@ function viewRecord(id) {
 }
 
 recordsList.addEventListener('click', async e => {
+  const th = e.target.closest('th.sortable');
+  if (th && th.dataset.table === 'records') {
+    toggleSort(recordsSort, th.dataset.field);
+    renderRecordsList(getCachedRecords());
+    return;
+  }
+
   const btn = e.target.closest('.record-btn');
-  const item = e.target.closest('.record-item');
-  if (!item) return;
-  const id = item.dataset.id;
+  const row = e.target.closest('.record-row');
+  if (!row) return;
+  const id = row.dataset.id;
 
   if (btn?.classList.contains('delete')) {
     await deleteRecord(id);
@@ -1535,6 +1591,11 @@ recordsList.addEventListener('click', async e => {
   if (!btn) {
     viewRecord(id);
   }
+});
+
+recordsSearchInput.addEventListener('input', () => {
+  recordsSearchQuery = recordsSearchInput.value;
+  renderRecordsList(getCachedRecords());
 });
 
 // --- Cart (multi-item sale, no inventory change until Complete Sale) ---
