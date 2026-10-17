@@ -1958,27 +1958,40 @@ function renderItemPerformance(sales, items, vendorFilter) {
   `;
 
   const soldHtml = soldRows.length
-    ? soldRows.map(r => `
-      <div class="pending-sale-row">
-        <div class="pending-sale-info">
-          <span class="pending-sale-total">$${r.revenue.toFixed(2)}</span>
-          · <span class="pending-sale-status">${r.quantity} sold</span>
-          <div class="pending-sale-items">${esc(r.name)}${r.subVendor ? ` (${esc(r.subVendor)})` : ''}</div>
-        </div>
+    ? `
+      <div class="sales-report-table-wrap">
+        <table class="sales-report-table">
+          <thead><tr><th>Item</th><th>Sub-vendor</th><th>Qty Sold</th><th>Revenue</th></tr></thead>
+          <tbody>${soldRows.map(r => `
+            <tr>
+              <td>${esc(r.name)}</td>
+              <td>${esc(r.subVendor || '—')}</td>
+              <td>${r.quantity}</td>
+              <td>$${r.revenue.toFixed(2)}</td>
+            </tr>
+          `).join('')}</tbody>
+        </table>
       </div>
-    `).join('')
+    `
     : '<div class="empty-state">No items sold yet.</div>';
 
   const unsoldHtml = unsoldRows.length
-    ? unsoldRows.map(r => `
-      <div class="pending-sale-row">
-        <div class="pending-sale-info">
-          <span class="pending-sale-total">${r.quantity} in stock</span>
-          · <span class="pending-sale-status">${r.subVendor ? 'Unsold - return to vendor' : 'Unsold'}</span>
-          <div class="pending-sale-items">${esc(r.name)}${r.subVendor ? ` (${esc(r.subVendor)})` : ''}${r.price ? ` · $${esc(r.price)} each` : ''}</div>
-        </div>
+    ? `
+      <div class="sales-report-table-wrap">
+        <table class="sales-report-table">
+          <thead><tr><th>Item</th><th>Sub-vendor</th><th>Qty</th><th>Price</th><th>Status</th></tr></thead>
+          <tbody>${unsoldRows.map(r => `
+            <tr>
+              <td>${esc(r.name)}</td>
+              <td>${esc(r.subVendor || '—')}</td>
+              <td>${r.quantity}</td>
+              <td>${r.price ? `$${esc(r.price)}` : '—'}</td>
+              <td>${r.subVendor ? 'Return to vendor' : 'Unsold'}</td>
+            </tr>
+          `).join('')}</tbody>
+        </table>
       </div>
-    `).join('')
+    `
     : '<div class="empty-state">No unsold items - everything currently in stock has sold at least once.</div>';
 
   salesReportList.innerHTML = `
@@ -2029,21 +2042,30 @@ function renderSalesReport(sales) {
     return;
   }
 
-  salesReportList.innerHTML = sales.map(sale => {
+  const rowsHtml = sales.map(sale => {
     const itemsSummary = sale.items
       .map(item => `${item.quantity}x ${item.name || '(no name)'}${item.subVendor ? ` (${item.subVendor})` : ''}`)
       .join(', ');
     return `
-    <div class="pending-sale-row">
-      <div class="pending-sale-info">
-        <span class="pending-sale-total">$${parseFloat(sale.total).toFixed(2)}</span>
-        · <span class="pending-sale-status">${esc(paymentMethodLabel(sale.paymentMethod))}</span>
-        · <span class="pending-sale-status">${new Date(sale.createdAt).toLocaleString()}</span>
-        ${itemsSummary ? `<div class="pending-sale-items">${esc(itemsSummary)}</div>` : ''}
-      </div>
+      <tr>
+        <td>${new Date(sale.createdAt).toLocaleString()}</td>
+        <td>${esc(itemsSummary)}</td>
+        <td>${esc(paymentMethodLabel(sale.paymentMethod))}</td>
+        <td>$${parseFloat(sale.total).toFixed(2)}</td>
+      </tr>
+    `;
+  }).join('');
+
+  salesReportList.innerHTML = `
+    <div class="sales-report-table-wrap">
+      <table class="sales-report-table">
+        <thead>
+          <tr><th>Date</th><th>Items</th><th>Payment</th><th>Total</th></tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
     </div>
   `;
-  }).join('');
 }
 
 async function openSalesReportModal() {

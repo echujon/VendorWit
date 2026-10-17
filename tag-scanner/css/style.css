@@ -14,6 +14,16 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Generic hide-this-element utility. Several specific X.hidden rules
+   already existed below (one per element that needed it historically),
+   but there was never a catch-all - several newer elements used
+   class="... hidden" assuming one existed, so they never actually hid
+   (review-actions-sold, sticker-qr-hint, and the Image scan-mode button
+   left visible despite being deliberately turned off). This covers
+   every current and future use; the specific rules below are now
+   redundant but harmless. */
+.hidden { display: none !important; }
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   background: var(--bg);
@@ -543,6 +553,22 @@ main { flex: 1; padding: 1.25rem; padding-bottom: 5rem; display: flex; flex-dire
 .sales-report-controls select { flex: 1; min-width: 140px; padding: 0.35rem 0.5rem; font-size: 0.85rem; }
 .sales-report-subheading { font-size: 0.9rem; margin: 0.75rem 0 0.4rem; color: var(--muted); }
 
+/* Tables only ever scroll sideways in their own wrapper, never the page -
+   the modal itself stays a normal vertical scroll. */
+.sales-report-table-wrap { width: 100%; overflow-x: auto; }
+.sales-report-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.sales-report-table th, .sales-report-table td {
+  padding: 0.5rem 0.6rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.sales-report-table th:nth-child(2), .sales-report-table td:nth-child(2) {
+  white-space: normal; /* items column may wrap - every other column stays single-line */
+}
+.sales-report-table th { color: var(--muted); font-weight: 600; font-size: 0.8rem; }
+.sales-report-table tbody tr:last-child td { border-bottom: none; }
+
 /* Settings page */
 .settings-body { padding: 1.25rem; display: flex; flex-direction: column; gap: 1.25rem; }
 
@@ -577,23 +603,29 @@ main { flex: 1; padding: 1.25rem; padding-bottom: 5rem; display: flex; flex-dire
 }
 
 /* Toast */
+/* A full-width banner at the very top of the screen, above everything
+   including open modals (modal z-index is 200) - a small bottom pill
+   was easy to miss, especially with a modal's dark overlay covering it
+   (it was also sitting at a lower z-index than modals, so it rendered
+   fully hidden behind them, not just easy to miss). */
 #toast {
   position: fixed;
-  bottom: 1.5rem;
-  left: 50%;
-  transform: translateX(-50%) translateY(80px);
+  top: 0;
+  left: 0;
+  right: 0;
+  transform: translateY(-100%);
   background: var(--text);
   color: white;
-  padding: 0.75rem 1.25rem;
-  border-radius: 999px;
-  font-size: 0.9rem;
-  font-weight: 500;
-  white-space: nowrap;
-  z-index: 100;
+  padding: 0.9rem 1.25rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-align: center;
+  z-index: 300;
   transition: transform 0.3s ease;
   pointer-events: none;
+  box-shadow: var(--shadow);
 }
-#toast.show { transform: translateX(-50%) translateY(0); }
+#toast.show { transform: translateY(0); }
 #toast.success { background: var(--success); }
 #toast.error { background: var(--danger); }
 
