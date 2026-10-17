@@ -26,6 +26,7 @@ const fieldSize = document.getElementById('field-size');
 const fieldColor = document.getElementById('field-color');
 const fieldTagColor = document.getElementById('field-tag-color');
 const fieldSubVendor = document.getElementById('field-sub-vendor');
+const fieldReturned = document.getElementById('field-returned');
 const fieldPrice = document.getElementById('field-price');
 const fieldQuantity = document.getElementById('field-quantity');
 const fieldLocation = document.getElementById('field-location');
@@ -560,6 +561,7 @@ function showMatchCard(record, matchType = 'text', score = null) {
   document.getElementById('match-color').textContent = record.color || '—';
   document.getElementById('match-tagColor').textContent = record.tagColor || '—';
   document.getElementById('match-subVendor').textContent = record.subVendor || '—';
+  document.getElementById('match-returned').textContent = record.subVendor ? (record.returned ? 'Yes' : 'No') : '—';
   document.getElementById('match-price').textContent = record.price ? `$${record.price}` : '—';
   document.getElementById('match-quantity').textContent = record.quantity || '—';
   document.getElementById('match-location').textContent = record.location || '—';
@@ -877,6 +879,7 @@ function showNewItemForm(rawText, prefill = {}) {
   fieldColor.value = parsed.color || prefill.color || '';
   fieldTagColor.value = prefill.tagColor || '';
   fieldSubVendor.value = prefill.subVendor || '';
+  fieldReturned.checked = !!prefill.returned;
   fieldPrice.value = parsed.price || prefill.price || '';
   fieldQuantity.value = parsed.quantity || prefill.quantity || '';
   fieldLocation.value = parsed.location || prefill.location || '';
@@ -1409,6 +1412,7 @@ function collectFormData() {
     color: fieldColor.value.trim(),
     tagColor: fieldTagColor.value.trim(),
     subVendor: fieldSubVendor.value.trim(),
+    returned: fieldReturned.checked,
     price: fieldPrice.value.trim(),
     quantity: fieldQuantity.value.trim(),
     location: fieldLocation.value.trim(),
@@ -1497,7 +1501,7 @@ async function renderRecords() {
     <div class="record-item" data-id="${r.id}">
       <div class="record-info">
         <div class="record-name">${esc(r.item || r.name || '(no name)')}</div>
-        <div class="record-meta">${esc(r.uniqueId || '')}${r.uniqueId ? ' · ' : ''}${r.subVendor ? `${esc(r.subVendor)} · ` : ''}${r.tagColor ? `${esc(r.tagColor)} tag · ` : ''}${r.quantity ? `Qty ${esc(r.quantity)} · ` : ''}${esc(r.location || '')}${r.location ? ' · ' : ''}${new Date(r.createdAt).toLocaleDateString()}</div>
+        <div class="record-meta">${esc(r.uniqueId || '')}${r.uniqueId ? ' · ' : ''}${r.subVendor ? `${esc(r.subVendor)}${r.returned ? ' (returned)' : ''} · ` : ''}${r.tagColor ? `${esc(r.tagColor)} tag · ` : ''}${r.quantity ? `Qty ${esc(r.quantity)} · ` : ''}${esc(r.location || '')}${r.location ? ' · ' : ''}${new Date(r.createdAt).toLocaleDateString()}</div>
       </div>
       <div class="record-price">$${esc(r.price || '—')}</div>
       <div class="record-actions">
@@ -2056,7 +2060,7 @@ function renderItemPerformance(sales, items, vendorFilter) {
   // still sitting in inventory" report, not just the consignment subset.
   const unsoldRowsRaw = items
     .filter(r => !soldById.has(r.id) && (parseInt(r.quantity, 10) || 0) > 0 && (!vendorFilter || r.subVendor === vendorFilter))
-    .map(r => ({ name: r.item || r.name || '(no name)', uniqueId: r.uniqueId || '', subVendor: r.subVendor || '', quantity: parseInt(r.quantity, 10) || 0, price: r.price || '' }));
+    .map(r => ({ name: r.item || r.name || '(no name)', uniqueId: r.uniqueId || '', subVendor: r.subVendor || '', quantity: parseInt(r.quantity, 10) || 0, price: r.price || '', returned: !!r.returned }));
 
   const soldRows = sortRows(Array.from(soldById.values()), soldTableSort, {
     id: r => r.uniqueId,
@@ -2126,7 +2130,7 @@ function renderItemPerformance(sales, items, vendorFilter) {
               <td>${esc(r.subVendor || '—')}</td>
               <td>${r.quantity}</td>
               <td>${r.price ? `$${esc(r.price)}` : '—'}</td>
-              <td>${r.subVendor ? 'Return to vendor' : 'Unsold'}</td>
+              <td>${r.subVendor ? (r.returned ? 'Returned' : 'Return to vendor') : 'Unsold'}</td>
             </tr>
           `).join('')}</tbody>
         </table>
@@ -2288,7 +2292,7 @@ function exportItemPerformanceCSV(soldRows, unsoldRows) {
     rows.push(['Sold', r.uniqueId || '', `"${r.name.replace(/"/g, '""')}"`, `"${(r.subVendor || '').replace(/"/g, '""')}"`, r.quantity, r.revenue.toFixed(2)]);
   });
   unsoldRows.forEach(r => {
-    const status = r.subVendor ? 'Unsold - return to vendor' : 'Unsold';
+    const status = r.subVendor ? (r.returned ? 'Unsold - returned' : 'Unsold - return to vendor') : 'Unsold';
     rows.push([status, r.uniqueId || '', `"${r.name.replace(/"/g, '""')}"`, `"${(r.subVendor || '').replace(/"/g, '""')}"`, r.quantity, r.price || '']);
   });
   const csv = rows.map(r => r.join(',')).join('\n');

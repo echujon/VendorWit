@@ -28,6 +28,7 @@ export async function onRequestPatch(context) {
       values.push(body[field]);
     }
   }
+  if ('returned' in body) { sets.push('returned = ?'); values.push(body.returned ? 1 : 0); }
   if ('embeddingGemini' in body) { sets.push('embedding_gemini = ?'); values.push(JSON.stringify(body.embeddingGemini)); }
   if ('embeddingClip' in body) { sets.push('embedding_clip = ?'); values.push(JSON.stringify(body.embeddingClip)); }
   if ('otherFields' in body) { sets.push('other_fields_json = ?'); values.push(JSON.stringify(body.otherFields)); }

@@ -34,8 +34,8 @@ export async function onRequestPost(context) {
     INSERT INTO items (
       id, location_id, unique_id, name, item, brand, size, color, tag_color,
       sub_vendor, price, quantity, bin_location,
-      photo_data_url, embedding_gemini, embedding_clip, other_fields_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      photo_data_url, embedding_gemini, embedding_clip, other_fields_json, returned
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     id, loc.locationId,
     body.uniqueId || null, body.name || null, body.item || null, body.brand || null,
@@ -44,7 +44,8 @@ export async function onRequestPost(context) {
     body.photoDataUrl || null,
     body.embeddingGemini ? JSON.stringify(body.embeddingGemini) : null,
     body.embeddingClip ? JSON.stringify(body.embeddingClip) : null,
-    body.otherFields ? JSON.stringify(body.otherFields) : null
+    body.otherFields ? JSON.stringify(body.otherFields) : null,
+    body.returned ? 1 : 0
   ).run();
 
   const row = await env.DB.prepare('SELECT * FROM items WHERE id = ?').bind(id).first();
