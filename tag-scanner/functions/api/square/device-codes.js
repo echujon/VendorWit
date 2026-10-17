@@ -20,6 +20,16 @@ export async function onRequestPost(context) {
   const body = await request.json().catch(() => ({}));
   const name = (body.name || '').trim() || 'Terminal';
 
+  // The Terminal Checkout API requires the checkout's order and the
+  // physical device to be registered at the same Square Location - a
+  // device paired here must use this app location's configured Square
+  // Location (Settings), not the merchant's main_location_id, or every
+  // Terminal checkout at an event other than that fixed default location
+  // fails with a location mismatch (see terminal-checkout.js).
+  if (!loc.squareLocationId) {
+    return json({ error: 'Set this location\'s Square Location in Settings before pairing a Terminal.' }, 400);
+  }
+
   let creds;
   try {
     creds = await getSquareCredentials(env, loc.organizationId);
@@ -37,12 +47,6 @@ export async function onRequestPost(context) {
     'Square-Version': '2026-07-15'
   };
 
-  const merchantRes = await fetch(`${baseUrl}/v2/merchants/me`, { headers });
-  const merchantData = await merchantRes.json();
-  if (!merchantRes.ok) {
-    return json({ error: merchantData.errors?.[0]?.detail || 'Square API error (merchant lookup)' }, merchantRes.status);
-  }
-
   const codeRes = await fetch(`${baseUrl}/v2/devices/codes`, {
     method: 'POST',
     headers,
@@ -51,7 +55,7 @@ export async function onRequestPost(context) {
       device_code: {
         name,
         product_type: 'TERMINAL_API',
-        location_id: merchantData.merchant.main_location_id
+        location_id: loc.squareLocationId
       }
     })
   });
