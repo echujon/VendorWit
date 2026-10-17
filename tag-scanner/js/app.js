@@ -1853,7 +1853,6 @@ const salesReportList = document.getElementById('sales-report-list');
 const btnSalesReportExport = document.getElementById('btn-sales-report-export');
 const salesReportFilterVendor = document.getElementById('sales-report-filter-vendor');
 const salesReportFilterMethod = document.getElementById('sales-report-filter-method');
-const salesReportSort = document.getElementById('sales-report-sort');
 const btnSalesReportViewSale = document.getElementById('btn-sales-report-view-sale');
 const btnSalesReportViewItem = document.getElementById('btn-sales-report-view-item');
 
@@ -1890,22 +1889,64 @@ function populateSalesReportVendorFilter(sales) {
   if (vendors.has(current)) salesReportFilterVendor.value = current;
 }
 
+// Sortable-table headers - one state object per table (each table's
+// columns are independent, so clicking "Total" on the sale table doesn't
+// touch the Sold/Unsold tables' own sort). Clicking an unsorted column
+// sorts it descending first (newest/highest first reads as the more
+// useful default for both dates and money); clicking the already-active
+// column flips direction instead of resetting it.
+let saleTableSort = { field: 'date', dir: 'desc' };
+let soldTableSort = { field: 'revenue', dir: 'desc' };
+let unsoldTableSort = { field: 'name', dir: 'asc' };
+
+function compareForSort(a, b) {
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  return String(a).localeCompare(String(b));
+}
+
+function sortRows(rows, state, accessors) {
+  const getter = accessors[state.field];
+  if (!getter) return rows;
+  const sorted = [...rows].sort((r1, r2) => compareForSort(getter(r1), getter(r2)));
+  return state.dir === 'desc' ? sorted.reverse() : sorted;
+}
+
+function toggleSort(state, field) {
+  if (state.field === field) {
+    state.dir = state.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    state.field = field;
+    state.dir = 'desc';
+  }
+}
+
+function sortTh(label, field, state, table) {
+  const arrow = state.field === field ? `<span class="sort-arrow">${state.dir === 'asc' ? '▲' : '▼'}</span>` : '';
+  return `<th class="sortable" data-table="${table}" data-field="${field}">${esc(label)}${arrow}</th>`;
+}
+
+// One delegated listener handles every sortable header across all three
+// tables (sale/sold/unsold) - innerHTML gets fully replaced on every
+// render, so listeners bound to individual <th> elements would be lost;
+// binding once to the container that survives re-renders avoids that.
+salesReportList.addEventListener('click', e => {
+  const th = e.target.closest('th.sortable');
+  if (!th) return;
+  const { table, field } = th.dataset;
+  if (table === 'sale') toggleSort(saleTableSort, field);
+  else if (table === 'sold') toggleSort(soldTableSort, field);
+  else if (table === 'unsold') toggleSort(unsoldTableSort, field);
+  applySalesReportFiltersAndSort();
+});
+
 function applySalesReportFiltersAndSort() {
   const vendor = salesReportFilterVendor.value;
   const method = salesReportFilterMethod.value;
-  const sort = salesReportSort.value;
 
   visibleSales = allSales.filter(sale =>
     (!method || sale.paymentMethod === method) &&
     (!vendor || sale.items.some(item => item.subVendor === vendor))
   );
-
-  visibleSales.sort((a, b) => {
-    if (sort === 'date-asc') return new Date(a.createdAt) - new Date(b.createdAt);
-    if (sort === 'total-desc') return parseFloat(b.total) - parseFloat(a.total);
-    if (sort === 'total-asc') return parseFloat(a.total) - parseFloat(b.total);
-    return new Date(b.createdAt) - new Date(a.createdAt); // date-desc, default
-  });
 
   if (salesReportView === 'item') {
     renderItemPerformance(visibleSales, allItems, vendor);
@@ -1936,7 +1977,6 @@ function renderItemPerformance(sales, items, vendorFilter) {
     }
   }
 
-  const soldRows = Array.from(soldById.values()).sort((a, b) => b.revenue - a.revenue);
   // Every item currently in stock that's never appeared in a sale -
   // regardless of whether it has a sub-vendor. Items with a sub-vendor
   // still get called out as "return to vendor" in the row itself (that's
@@ -1944,9 +1984,24 @@ function renderItemPerformance(sales, items, vendorFilter) {
   // but items with no sub-vendor (the main vendor's own stock) are no
   // longer excluded - this is meant to be a full "what's sold vs. what's
   // still sitting in inventory" report, not just the consignment subset.
-  const unsoldRows = items
+  const unsoldRowsRaw = items
     .filter(r => !soldById.has(r.id) && (parseInt(r.quantity, 10) || 0) > 0 && (!vendorFilter || r.subVendor === vendorFilter))
     .map(r => ({ name: r.item || r.name || '(no name)', uniqueId: r.uniqueId || '', subVendor: r.subVendor || '', quantity: parseInt(r.quantity, 10) || 0, price: r.price || '' }));
+
+  const soldRows = sortRows(Array.from(soldById.values()), soldTableSort, {
+    id: r => r.uniqueId,
+    name: r => r.name,
+    subVendor: r => r.subVendor,
+    quantity: r => r.quantity,
+    revenue: r => r.revenue
+  });
+  const unsoldRows = sortRows(unsoldRowsRaw, unsoldTableSort, {
+    id: r => r.uniqueId,
+    name: r => r.name,
+    subVendor: r => r.subVendor,
+    quantity: r => r.quantity,
+    price: r => parseFloat(r.price) || 0
+  });
 
   soldRowsForExport = soldRows;
   unsoldRowsForExport = unsoldRows;
@@ -1961,7 +2016,13 @@ function renderItemPerformance(sales, items, vendorFilter) {
     ? `
       <div class="sales-report-table-wrap">
         <table class="sales-report-table">
-          <thead><tr><th>ID</th><th>Item</th><th>Sub-vendor</th><th>Qty Sold</th><th>Revenue</th></tr></thead>
+          <thead><tr>
+            ${sortTh('ID', 'id', soldTableSort, 'sold')}
+            ${sortTh('Item', 'name', soldTableSort, 'sold')}
+            ${sortTh('Sub-vendor', 'subVendor', soldTableSort, 'sold')}
+            ${sortTh('Qty Sold', 'quantity', soldTableSort, 'sold')}
+            ${sortTh('Revenue', 'revenue', soldTableSort, 'sold')}
+          </tr></thead>
           <tbody>${soldRows.map(r => `
             <tr>
               <td>${esc(r.uniqueId || '—')}</td>
@@ -1980,7 +2041,14 @@ function renderItemPerformance(sales, items, vendorFilter) {
     ? `
       <div class="sales-report-table-wrap">
         <table class="sales-report-table">
-          <thead><tr><th>ID</th><th>Item</th><th>Sub-vendor</th><th>Qty</th><th>Price</th><th>Status</th></tr></thead>
+          <thead><tr>
+            ${sortTh('ID', 'id', unsoldTableSort, 'unsold')}
+            ${sortTh('Item', 'name', unsoldTableSort, 'unsold')}
+            ${sortTh('Sub-vendor', 'subVendor', unsoldTableSort, 'unsold')}
+            ${sortTh('Qty', 'quantity', unsoldTableSort, 'unsold')}
+            ${sortTh('Price', 'price', unsoldTableSort, 'unsold')}
+            <th>Status</th>
+          </tr></thead>
           <tbody>${unsoldRows.map(r => `
             <tr>
               <td>${esc(r.uniqueId || '—')}</td>
@@ -2008,7 +2076,6 @@ function setSalesReportView(view) {
   salesReportView = view;
   btnSalesReportViewSale.classList.toggle('active', view === 'sale');
   btnSalesReportViewItem.classList.toggle('active', view === 'item');
-  salesReportSort.style.display = view === 'item' ? 'none' : '';
   applySalesReportFiltersAndSort();
 }
 
@@ -2044,25 +2111,50 @@ function renderSalesReport(sales) {
     return;
   }
 
-  const rowsHtml = sales.map(sale => {
+  const rows = sales.map(sale => {
     const itemsSummary = sale.items
-      .map(item => `${item.quantity}x ${item.name || '(no name)'}${item.uniqueId ? ` [ID: ${item.uniqueId}]` : ''}${item.subVendor ? ` (${item.subVendor})` : ''}`)
+      .map(item => `${item.quantity}x ${item.name || '(no name)'}${item.subVendor ? ` (${item.subVendor})` : ''}`)
       .join(', ');
-    return `
-      <tr>
-        <td>${new Date(sale.createdAt).toLocaleString()}</td>
-        <td>${esc(itemsSummary)}</td>
-        <td>${esc(paymentMethodLabel(sale.paymentMethod))}</td>
-        <td>$${parseFloat(sale.total).toFixed(2)}</td>
-      </tr>
-    `;
-  }).join('');
+    const ids = sale.items.map(item => item.uniqueId).filter(Boolean).join(', ');
+    return {
+      dateValue: new Date(sale.createdAt).getTime(),
+      dateText: new Date(sale.createdAt).toLocaleString(),
+      ids,
+      itemsSummary,
+      paymentText: paymentMethodLabel(sale.paymentMethod),
+      total: parseFloat(sale.total) || 0
+    };
+  });
+
+  const sorted = sortRows(rows, saleTableSort, {
+    date: r => r.dateValue,
+    id: r => r.ids,
+    items: r => r.itemsSummary,
+    payment: r => r.paymentText,
+    total: r => r.total
+  });
+
+  const rowsHtml = sorted.map(r => `
+    <tr>
+      <td>${r.dateText}</td>
+      <td>${esc(r.ids || '—')}</td>
+      <td class="col-wrap">${esc(r.itemsSummary)}</td>
+      <td>${esc(r.paymentText)}</td>
+      <td>$${r.total.toFixed(2)}</td>
+    </tr>
+  `).join('');
 
   salesReportList.innerHTML = `
     <div class="sales-report-table-wrap">
       <table class="sales-report-table">
         <thead>
-          <tr><th>Date</th><th>Items</th><th>Payment</th><th>Total</th></tr>
+          <tr>
+            ${sortTh('Date', 'date', saleTableSort, 'sale')}
+            ${sortTh('ID', 'id', saleTableSort, 'sale')}
+            ${sortTh('Items', 'items', saleTableSort, 'sale')}
+            ${sortTh('Payment', 'payment', saleTableSort, 'sale')}
+            ${sortTh('Total', 'total', saleTableSort, 'sale')}
+          </tr>
         </thead>
         <tbody>${rowsHtml}</tbody>
       </table>
@@ -2089,12 +2181,21 @@ function closeSalesReportModal() {
 }
 
 function exportSalesCSV(sales) {
-  const rows = [['Timestamp', 'Items', 'Sub-vendors', 'Total', 'Payment Method']];
-  sales.forEach(sale => {
-    const itemsSummary = sale.items.map(item => `${item.quantity}x ${item.name || '(no name)'}${item.uniqueId ? ` [ID: ${item.uniqueId}]` : ''}`).join('; ');
+  const rows = [['Timestamp', 'ID', 'Items', 'Sub-vendors', 'Total', 'Payment Method']];
+  const sorted = sortRows(sales, saleTableSort, {
+    date: s => new Date(s.createdAt).getTime(),
+    id: s => s.items.map(i => i.uniqueId).filter(Boolean).join(', '),
+    items: s => s.items.map(i => i.name).join(', '),
+    payment: s => paymentMethodLabel(s.paymentMethod),
+    total: s => parseFloat(s.total) || 0
+  });
+  sorted.forEach(sale => {
+    const ids = sale.items.map(item => item.uniqueId).filter(Boolean).join('; ');
+    const itemsSummary = sale.items.map(item => `${item.quantity}x ${item.name || '(no name)'}`).join('; ');
     const subVendors = Array.from(new Set(sale.items.map(item => item.subVendor).filter(Boolean))).join('; ');
     rows.push([
       sale.createdAt || '',
+      ids,
       `"${itemsSummary.replace(/"/g, '""')}"`,
       `"${subVendors.replace(/"/g, '""')}"`,
       sale.total || '',
@@ -2137,7 +2238,6 @@ btnSalesReport.addEventListener('click', openSalesReportModal);
 btnSalesReportModalClose.addEventListener('click', closeSalesReportModal);
 salesReportFilterVendor.addEventListener('change', applySalesReportFiltersAndSort);
 salesReportFilterMethod.addEventListener('change', applySalesReportFiltersAndSort);
-salesReportSort.addEventListener('change', applySalesReportFiltersAndSort);
 btnSalesReportExport.addEventListener('click', () => {
   if (salesReportView === 'item') {
     if (!soldRowsForExport.length && !unsoldRowsForExport.length) { toast('Nothing to export', 'error'); return; }
