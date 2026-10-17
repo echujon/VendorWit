@@ -8,6 +8,14 @@
 // changes. Nothing calls this Worker's own fetch() directly - it's only
 // ever reached through the Durable Object binding from tag-scanner.
 
+// How long an activeSales entry can sit untouched before the shared Queue
+// view starts warning it'll be removed (see pruneStaleActiveSales/
+// keepActiveSale below), and how long that warning lasts before it
+// actually happens. The client mirrors these two numbers to render its
+// own countdown - keep them in sync with js/app.js if either changes.
+const ACTIVE_SALE_WARN_MS = 40 * 60 * 1000; // 40 minutes
+const ACTIVE_SALE_GRACE_MS = 3 * 60 * 1000; // 3 minutes
+
 export class TerminalQueue {
   constructor(state, env) {
     this.state = state;
@@ -62,6 +70,8 @@ export class TerminalQueue {
     const activeSaleMatch = pathname.match(/^\/active-sales\/([^/]+)$/);
     if (activeSaleMatch && request.method === 'PATCH') return this.updateActiveSale(activeSaleMatch[1], request);
     if (activeSaleMatch && request.method === 'DELETE') return this.deleteActiveSale(activeSaleMatch[1]);
+    const keepActiveSaleMatch = pathname.match(/^\/active-sales\/([^/]+)\/keep$/);
+    if (keepActiveSaleMatch && request.method === 'POST') return this.keepActiveSale(keepActiveSaleMatch[1]);
 
     return new Response('Not found', { status: 404 });
   }
@@ -265,8 +275,48 @@ export class TerminalQueue {
     return { status: 'unknown' };
   }
 
+  // Root-cause fix for entries that outlive the device that created them:
+  // activeSales is entirely client-driven (created on enqueue, updated on
+  // status change, deleted on completion/cancellation) - if a device
+  // disappears mid-sale (tab closed, crash, dead connection) before
+  // sending that final cleanup call, nothing else ever removes it.
+  //
+  // Nothing disappears silently, though: at WARN_MS old, the client UI
+  // (see renderQueueModalList) shows a visible countdown with a "Keep"
+  // button on that entry - any staff member looking at the shared Queue
+  // can see it coming and stop it. Only if nobody acts before the grace
+  // period elapses (WARN_MS + GRACE_MS total) does this actually delete
+  // it. "Keep" (see keepActiveSale below) just resets createdAt, same as
+  // if the sale were freshly created. Pruned on every read, so it
+  // self-heals without needing a cron/alarm.
+  pruneStaleActiveSales() {
+    const cutoff = Date.now() - (ACTIVE_SALE_WARN_MS + ACTIVE_SALE_GRACE_MS);
+    let pruned = false;
+    for (const [saleId, sale] of this.activeSales) {
+      if (sale.createdAt && sale.createdAt < cutoff) {
+        this.activeSales.delete(saleId);
+        pruned = true;
+      }
+    }
+    if (pruned) this.persistActiveSales(); // fire-and-forget - re-pruned on next read regardless
+  }
+
   activeSaleList() {
+    this.pruneStaleActiveSales();
     return Array.from(this.activeSales.entries()).map(([saleId, s]) => ({ saleId, ...s }));
+  }
+
+  // "Keep" just restarts the clock, same as if the sale were only now
+  // created - any staff member viewing the shared Queue can call this,
+  // not just the device that originally started the sale, since this is
+  // deliberately a shared, anyone-can-act record (same as remove).
+  async keepActiveSale(saleId) {
+    const sale = this.activeSales.get(saleId);
+    if (!sale) return json({ error: 'Not found' }, 404);
+    sale.createdAt = Date.now();
+    await this.persistActiveSales();
+    this.broadcastState();
+    return json({ ok: true });
   }
 
   async persistActiveSales() {

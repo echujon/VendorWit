@@ -1802,15 +1802,33 @@ function renderQueueBadge() {
   queueBadge.classList.toggle('hidden', count === 0);
 }
 
+// Mirrors terminal-queue-worker/worker.js's ACTIVE_SALE_WARN_MS/
+// ACTIVE_SALE_GRACE_MS - purely for rendering the countdown here; the
+// server enforces the actual removal independently, using its own copy
+// of these numbers, so a client that's offline/closed doesn't block it.
+const ACTIVE_SALE_WARN_MS = 40 * 60 * 1000; // 40 minutes
+const ACTIVE_SALE_GRACE_MS = 3 * 60 * 1000; // 3 minutes
+
+function formatCountdown(ms) {
+  const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
 function renderQueueModalList() {
   if (!locationActiveSales.length) {
     queueModalList.innerHTML = '<div class="empty-state">No pending sales right now.</div>';
     return;
   }
   const myClientId = getClientId();
+  const now = Date.now();
   queueModalList.innerHTML = locationActiveSales.map(sale => {
     const items = Array.isArray(sale.cart) ? sale.cart : [];
     const itemsSummary = items.map(item => `${item.quantity}x ${item.name || '(no name)'}`).join(', ');
+    const age = sale.createdAt ? now - sale.createdAt : 0;
+    const atRisk = age >= ACTIVE_SALE_WARN_MS;
+    const removeIn = sale.createdAt ? (sale.createdAt + ACTIVE_SALE_WARN_MS + ACTIVE_SALE_GRACE_MS) - now : null;
     return `
     <div class="pending-sale-row${sale.clientId === myClientId ? '' : ' other-device'}">
       <div class="pending-sale-info">
@@ -1818,10 +1836,60 @@ function renderQueueModalList() {
         · <span class="pending-sale-status">${esc(queueSaleStatusText(sale))}</span>
         ${itemsSummary ? `<div class="pending-sale-items">${esc(itemsSummary)}</div>` : ''}
         ${sale.clientId === myClientId ? '' : '<div class="pending-sale-owner">Another device</div>'}
+        ${atRisk ? `<div class="pending-sale-at-risk">Will be removed in ${formatCountdown(removeIn)} unless kept</div>` : ''}
+      </div>
+      <div class="pending-sale-queue-actions">
+        ${atRisk ? `<button class="record-btn keep-active-sale" data-sale-id="${sale.saleId}">Keep</button>` : ''}
+        <button class="record-btn delete remove-active-sale" data-sale-id="${sale.saleId}" title="Remove">✕</button>
       </div>
     </div>
   `;
   }).join('');
+}
+
+queueModalList.addEventListener('click', async e => {
+  const keepBtn = e.target.closest('.keep-active-sale');
+  const removeBtn = e.target.closest('.remove-active-sale');
+  if (!keepBtn && !removeBtn) return;
+  const saleId = (keepBtn || removeBtn).dataset.saleId;
+
+  try {
+    if (keepBtn) {
+      await fetch(`/api/queue/active-sales/${saleId}/keep`, { method: 'POST', headers: locationHeaders() });
+    } else if (removeBtn) {
+      await fetch(`/api/queue/active-sales/${saleId}`, { method: 'DELETE', headers: locationHeaders() });
+    }
+  } catch (err) {
+    toast('Queue action failed: ' + err.message, 'error');
+    return;
+  }
+
+  // The WebSocket 'state' broadcast will also update locationActiveSales
+  // shortly, but refreshing here immediately avoids waiting on that for
+  // the person who just tapped the button.
+  try {
+    const res = await fetch('/api/queue/active-sales', { headers: locationHeaders() });
+    const data = await res.json();
+    if (res.ok) locationActiveSales = data;
+  } catch {}
+  renderQueueModalList();
+  renderQueueBadge();
+});
+
+// Keeps the countdown text live while the modal is open, without waiting
+// on the next server broadcast - purely a display tick, no network call.
+let queueCountdownTimer = null;
+function startQueueCountdownTimer() {
+  stopQueueCountdownTimer();
+  queueCountdownTimer = setInterval(() => {
+    if (!queueModal.classList.contains('hidden')) renderQueueModalList();
+  }, 1000);
+}
+function stopQueueCountdownTimer() {
+  if (queueCountdownTimer) {
+    clearInterval(queueCountdownTimer);
+    queueCountdownTimer = null;
+  }
 }
 
 async function openQueueModal() {
@@ -1835,9 +1903,11 @@ async function openQueueModal() {
   }
   renderQueueModalList();
   renderQueueBadge();
+  startQueueCountdownTimer();
 }
 
 function closeQueueModal() {
+  stopQueueCountdownTimer();
   queueModal.classList.add('hidden');
 }
 

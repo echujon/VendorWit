@@ -541,6 +541,8 @@ main { flex: 1; padding: 1.25rem; padding-bottom: 5rem; display: flex; flex-dire
 #queue-modal-list .pending-sale-row.other-device { opacity: 0.7; }
 #queue-modal-list .pending-sale-owner { font-size: 0.75rem; color: var(--muted); }
 #queue-modal-list .pending-sale-items { font-size: 0.8rem; color: var(--muted); margin-top: 0.15rem; }
+#queue-modal-list .pending-sale-at-risk { font-size: 0.78rem; color: var(--danger); margin-top: 0.3rem; font-weight: 600; }
+#queue-modal-list .pending-sale-queue-actions { display: flex; gap: 0.4rem; flex-shrink: 0; }
 
 /* Sales Report modal (#sales-report-modal) - reuses .pending-sale-row for
    each sale, same as the Queue modal above. */

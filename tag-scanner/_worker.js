@@ -25,6 +25,7 @@ import * as queueTerminals from './functions/api/queue/terminals.js';
 import * as queueAssignmentStatus from './functions/api/queue/assignment-status.js';
 import * as queueActiveSales from './functions/api/queue/active-sales.js';
 import * as queueActiveSalesById from './functions/api/queue/active-sales/[id].js';
+import * as queueActiveSalesKeep from './functions/api/queue/active-sales/keep.js';
 import * as debugSquare from './functions/api/debug-square.js';
 import * as orgs from './functions/api/orgs.js';
 import * as items from './functions/api/items.js';
@@ -104,6 +105,11 @@ export default {
       context.params = { id: activeSaleIdMatch[1] };
       if (method === 'PATCH') return queueActiveSalesById.onRequestPatch(context);
       if (method === 'DELETE') return queueActiveSalesById.onRequestDelete(context);
+    }
+    const activeSaleKeepMatch = pathname.match(/^\/api\/queue\/active-sales\/([^/]+)\/keep$/);
+    if (activeSaleKeepMatch && method === 'POST') {
+      context.params = { id: activeSaleKeepMatch[1] };
+      return queueActiveSalesKeep.onRequestPost(context);
     }
 
     if (pathname === '/api/orgs' && method === 'POST') {
