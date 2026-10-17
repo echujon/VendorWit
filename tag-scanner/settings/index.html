@@ -99,6 +99,13 @@
           </div>
           <div id="pairing-status-text" style="margin-top:0.5rem;color:var(--muted,#8a7060);font-size:0.85rem;"></div>
         </div>
+
+        <div class="settings-field" style="margin-top:1.25rem;">
+          <label for="square-location-select">Square Location (for Terminal tax)</label>
+          <p style="font-size:0.8rem;color:var(--muted,#8a7060);margin:0 0 0.4rem;">If your Square account has several Locations (one per event/city), pick which one this is - Terminal checkouts only apply that Location's own tax, not every tax in the account.</p>
+          <select id="square-location-select"><option value="">Loading...</option></select>
+          <button class="btn btn-outline" id="btn-save-square-location" type="button" style="margin-top:0.5rem;">Save</button>
+        </div>
       </div>
     </div>
 
@@ -238,6 +245,7 @@
           status.textContent = `Connected as ${data.businessName || ('merchant ' + data.merchantId)} (${data.environment}).`;
           btnConnectSquare.textContent = 'Reconnect with Square';
           pairingSection.style.display = 'block';
+          loadSquareLocations();
         } else {
           status.textContent = 'Not connected. Terminal checkouts will use the fallback token until this organization connects its own Square account.';
           btnConnectSquare.textContent = 'Connect with Square';
@@ -247,6 +255,36 @@
         status.textContent = 'Could not check Square connection: ' + err.message;
       }
     }
+
+    async function loadSquareLocations() {
+      const select = document.getElementById('square-location-select');
+      try {
+        const res = await fetch('/api/square/locations', { headers: locationHeaders() });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to load Square Locations');
+        select.innerHTML = '<option value="">— Not set —</option>' +
+          data.locations.map(l => `<option value="${l.id}">${l.name}</option>`).join('');
+        select.value = data.selectedSquareLocationId || '';
+      } catch (err) {
+        select.innerHTML = `<option value="">Could not load: ${err.message}</option>`;
+      }
+    }
+
+    document.getElementById('btn-save-square-location').addEventListener('click', async () => {
+      const select = document.getElementById('square-location-select');
+      try {
+        const res = await fetch('/api/square/set-location', {
+          method: 'POST',
+          headers: locationHeaders(),
+          body: JSON.stringify({ squareLocationId: select.value })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to save');
+        alert('Saved.');
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    });
 
     // The OAuth callback redirects back here with one of these params.
     const urlParams = new URLSearchParams(window.location.search);

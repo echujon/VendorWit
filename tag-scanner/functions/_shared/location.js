@@ -15,9 +15,14 @@ export async function resolveLocation(request, env) {
   if (!env.DB) return { error: 'Server not configured (DB)', status: 500 };
 
   const row = await env.DB.prepare(
-    'SELECT id, organization_id, name FROM locations WHERE join_code = ?'
+    'SELECT id, organization_id, name, square_location_id FROM locations WHERE join_code = ?'
   ).bind(code).first();
   if (!row) return { error: 'Invalid location code', status: 401 };
 
-  return { locationId: row.id, organizationId: row.organization_id, locationName: row.name };
+  return {
+    locationId: row.id,
+    organizationId: row.organization_id,
+    locationName: row.name,
+    squareLocationId: row.square_location_id || null
+  };
 }

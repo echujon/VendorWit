@@ -27,7 +27,6 @@ import * as queueActiveSales from './functions/api/queue/active-sales.js';
 import * as queueActiveSalesById from './functions/api/queue/active-sales/[id].js';
 import * as queueActiveSalesKeep from './functions/api/queue/active-sales/keep.js';
 import * as debugSquare from './functions/api/debug-square.js';
-import * as debugSquareTax from './functions/api/debug-square-tax.js';
 import * as orgs from './functions/api/orgs.js';
 import * as items from './functions/api/items.js';
 import * as itemsById from './functions/api/items/[id].js';
@@ -35,6 +34,8 @@ import * as sales from './functions/api/sales.js';
 import * as squareOauthStart from './functions/api/square/oauth/start.js';
 import * as squareOauthCallback from './functions/api/square/oauth/callback.js';
 import * as squareConnection from './functions/api/square/connection.js';
+import * as squareLocations from './functions/api/square/locations.js';
+import * as squareSetLocation from './functions/api/square/set-location.js';
 import * as squareDeviceCodes from './functions/api/square/device-codes.js';
 import * as squareDeviceCodesStatus from './functions/api/square/device-codes-status.js';
 import * as squareCashPayment from './functions/api/square/cash-payment.js';
@@ -69,9 +70,6 @@ export default {
 
     if (pathname === '/api/debug-square' && method === 'GET') {
       return debugSquare.onRequestGet(context);
-    }
-    if (pathname === '/api/debug-square-tax' && method === 'GET') {
-      return debugSquareTax.onRequestGet(context);
     }
 
     if (pathname === '/api/queue/connect' && method === 'GET') {
@@ -142,6 +140,12 @@ export default {
     }
     if (pathname === '/api/square/connection' && method === 'GET') {
       return squareConnection.onRequestGet(context);
+    }
+    if (pathname === '/api/square/locations' && method === 'GET') {
+      return squareLocations.onRequestGet(context);
+    }
+    if (pathname === '/api/square/set-location' && method === 'POST') {
+      return squareSetLocation.onRequestPost(context);
     }
     if (pathname === '/api/square/device-codes' && method === 'POST') {
       return squareDeviceCodes.onRequestPost(context);

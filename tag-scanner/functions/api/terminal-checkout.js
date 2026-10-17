@@ -73,36 +73,61 @@ export async function onRequestPost(context) {
     'Square-Version': '2026-07-15'
   };
 
-  // The order needs a location id — pull the merchant's main location rather
-  // than requiring it as separate config.
-  const merchantRes = await fetch(`${baseUrl}/v2/merchants/me`, { headers });
-  const merchantData = await merchantRes.json();
-  if (!merchantRes.ok) {
-    return json({ error: merchantData.errors?.[0]?.detail || 'Square API error (merchant lookup)' }, merchantRes.status);
+  // The order needs a Square location id - this used to default to the
+  // merchant's main_location_id, which is wrong for an account with
+  // several Square Locations (one per event/city, each with its own
+  // region-scoped tax - confirmed via a debug check that this account has
+  // 9, e.g. "Fort Collins Ski Swap", "Denver Ski Swap"). Each had every
+  // tax in the whole account applied regardless of which event was
+  // actually running. Now it's required to be configured per app
+  // location (Settings - see functions/api/square/set-location.js)
+  // rather than guessed, since getting this wrong means charging the
+  // wrong sales tax.
+  const squareLocationId = loc.squareLocationId;
+  if (!squareLocationId) {
+    return json({ error: 'No Square Location configured for this location yet - set it in Settings before charging via Terminal.' }, 400);
   }
-  const locationId = merchantData.merchant.main_location_id;
 
-  // Apply whatever sales tax is already configured in the Square account's
-  // catalog, rather than a rate hardcoded/typed into this app — so tax stays
-  // in sync with whatever the merchant sets up in Square. Referencing by
-  // catalog_object_id makes Square pull the name/percentage/inclusion type
-  // from the catalog object itself; scope ORDER applies it to the whole
-  // order total once, not per line item.
+  // Apply only the tax(es) actually scoped to this Square Location,
+  // using Square's own location-scoping fields on the catalog object
+  // (present_at_all_locations / present_at_location_ids /
+  // absent_at_location_ids - see developer.squareup.com/reference/
+  // square/objects/CatalogObject) - not just "every enabled tax in the
+  // whole catalog" like before, which applied every city/state's tax to
+  // every sale regardless of which event was running.
   const taxRes = await fetch(`${baseUrl}/v2/catalog/list?types=TAX`, { headers });
   const taxData = await taxRes.json();
   if (!taxRes.ok) {
     return json({ error: taxData.errors?.[0]?.detail || 'Square API error (catalog tax lookup)' }, taxRes.status);
   }
   const taxes = (taxData.objects || [])
-    .filter(obj => !obj.is_deleted && obj.tax_data?.enabled !== false)
+    .filter(obj => {
+      if (obj.is_deleted || obj.tax_data?.enabled === false) return false;
+      const presentIds = obj.present_at_location_ids || [];
+      const absentIds = obj.absent_at_location_ids || [];
+      return obj.present_at_all_locations
+        ? !absentIds.includes(squareLocationId)
+        : presentIds.includes(squareLocationId);
+    })
     .map(obj => ({ catalog_object_id: obj.id, scope: 'ORDER' }));
+
+  // Square's own processing fee passed on to the customer, calculated on
+  // the full total (subtotal + tax, not taxed itself) rather than just
+  // the item subtotal - TOTAL_PHASE is what applies after tax is figured
+  // in. Not configurable yet; a flat 2.5% was explicitly requested.
+  const serviceCharges = [{
+    name: 'Processing Fee',
+    percentage: '2.5',
+    calculation_phase: 'TOTAL_PHASE',
+    taxable: false
+  }];
 
   const orderRes = await fetch(`${baseUrl}/v2/orders`, {
     method: 'POST',
     headers,
     body: JSON.stringify({
       idempotency_key: crypto.randomUUID(),
-      order: { location_id: locationId, line_items: lineItems, taxes }
+      order: { location_id: squareLocationId, line_items: lineItems, taxes, service_charges: serviceCharges }
     })
   });
   const orderData = await orderRes.json();
