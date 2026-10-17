@@ -1494,6 +1494,7 @@ function resetScanArea() {
 // --- Records ---
 let recordsSort = { field: 'date', dir: 'desc' };
 let recordsSearchQuery = '';
+let soldItemIdsCache = new Set();
 
 function recordMatchesSearch(r, query) {
   if (!query) return true;
@@ -1522,7 +1523,8 @@ function renderRecordsList(records) {
     price: r => parseFloat(r.price) || 0,
     quantity: r => parseInt(r.quantity, 10) || 0,
     location: r => r.location || '',
-    date: r => new Date(r.createdAt).getTime() || 0
+    date: r => new Date(r.createdAt).getTime() || 0,
+    sold: r => (soldItemIdsCache.has(r.id) ? 1 : 0)
   });
 
   recordsList.innerHTML = `
@@ -1536,6 +1538,7 @@ function renderRecordsList(records) {
           ${sortTh('Qty', 'quantity', recordsSort, 'records')}
           ${sortTh('Location', 'location', recordsSort, 'records')}
           ${sortTh('Date', 'date', recordsSort, 'records')}
+          ${sortTh('Sold', 'sold', recordsSort, 'records')}
           <th></th>
         </tr></thead>
         <tbody>${rows.map(r => `
@@ -1547,6 +1550,7 @@ function renderRecordsList(records) {
             <td>${esc(r.quantity || '—')}</td>
             <td>${esc(r.location || '—')}</td>
             <td>${new Date(r.createdAt).toLocaleDateString()}</td>
+            <td>${soldItemIdsCache.has(r.id) ? '<span class="sold-badge">✓ Sold</span>' : '—'}</td>
             <td><button class="record-btn delete" data-id="${r.id}" title="Delete">✕</button></td>
           </tr>
         `).join('')}</tbody>
@@ -1556,7 +1560,13 @@ function renderRecordsList(records) {
 }
 
 async function renderRecords() {
-  const records = await getRecords();
+  const [records, sales] = await Promise.all([getRecords(), getSales()]);
+  soldItemIdsCache = new Set();
+  for (const sale of sales) {
+    for (const item of sale.items) {
+      if (item.id) soldItemIdsCache.add(item.id);
+    }
+  }
   renderRecordsList(records);
 }
 

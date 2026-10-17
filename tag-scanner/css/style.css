@@ -585,6 +585,8 @@ main { flex: 1; padding: 1.25rem; padding-bottom: 5rem; display: flex; flex-dire
 }
 .records-search:focus { outline: none; border-color: var(--brand); }
 
+.sold-badge { color: var(--success); font-weight: 700; white-space: nowrap; }
+
 .sales-report-table-wrap { width: 100%; overflow-x: auto; }
 .sales-report-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
 .sales-report-table th, .sales-report-table td {
