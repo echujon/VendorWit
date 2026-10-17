@@ -1503,6 +1503,15 @@ function recordMatchesSearch(r, query) {
   return haystack.includes(query);
 }
 
+// Sold takes priority over Returned (an item that eventually sold is done,
+// regardless of whether it was ever marked returned to the sub-vendor
+// beforehand) - Returned only applies to still-unsold consignment items.
+function recordStatus(r) {
+  if (soldItemIdsCache.has(r.id)) return 'Sold';
+  if (r.returned) return 'Returned';
+  return 'Holding';
+}
+
 function renderRecordsList(records) {
   const query = recordsSearchQuery.trim().toLowerCase();
   const filtered = records.filter(r => recordMatchesSearch(r, query));
@@ -1524,7 +1533,7 @@ function renderRecordsList(records) {
     quantity: r => parseInt(r.quantity, 10) || 0,
     location: r => r.location || '',
     date: r => new Date(r.createdAt).getTime() || 0,
-    sold: r => (soldItemIdsCache.has(r.id) ? 1 : 0)
+    status: r => recordStatus(r)
   });
 
   recordsList.innerHTML = `
@@ -1538,19 +1547,19 @@ function renderRecordsList(records) {
           ${sortTh('Qty', 'quantity', recordsSort, 'records')}
           ${sortTh('Location', 'location', recordsSort, 'records')}
           ${sortTh('Date', 'date', recordsSort, 'records')}
-          ${sortTh('Sold', 'sold', recordsSort, 'records')}
+          ${sortTh('Status', 'status', recordsSort, 'records')}
           <th></th>
         </tr></thead>
         <tbody>${rows.map(r => `
           <tr class="record-row" data-id="${r.id}">
             <td>${esc(r.uniqueId || '—')}</td>
             <td>${esc(r.item || r.name || '(no name)')}</td>
-            <td>${esc(r.subVendor || '—')}${r.subVendor && r.returned ? ' (returned)' : ''}</td>
+            <td>${esc(r.subVendor || '—')}</td>
             <td>${r.price ? `$${esc(r.price)}` : '—'}</td>
             <td>${esc(r.quantity || '—')}</td>
             <td>${esc(r.location || '—')}</td>
             <td>${new Date(r.createdAt).toLocaleDateString()}</td>
-            <td>${soldItemIdsCache.has(r.id) ? '<span class="sold-badge">✓ Sold</span>' : '—'}</td>
+            <td><span class="status-badge status-${recordStatus(r).toLowerCase()}">${recordStatus(r)}</span></td>
             <td><button class="record-btn delete" data-id="${r.id}" title="Delete">✕</button></td>
           </tr>
         `).join('')}</tbody>
