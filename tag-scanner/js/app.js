@@ -1307,7 +1307,7 @@ async function sellOne() {
   // 'other' instead of a specific method. The inventory decrement above
   // already happened, so this calls createSale() directly rather than
   // recordSale() (which would decrement inventory a second time).
-  const item = { id: matchedRecord.id, name: matchedRecord.item || matchedRecord.name, price: matchedRecord.price, quantity: 1, subVendor: matchedRecord.subVendor || '' };
+  const item = { id: matchedRecord.id, uniqueId: matchedRecord.uniqueId || '', name: matchedRecord.item || matchedRecord.name, price: matchedRecord.price, quantity: 1, subVendor: matchedRecord.subVendor || '' };
   try {
     await createSale({ items: [item], total: (parseFloat(matchedRecord.price) || 0).toFixed(2), paymentMethod: 'other' });
   } catch (err) {
@@ -1555,7 +1555,7 @@ function addToCart(record) {
     // Prefer the tag's "Item" field (e.g. "Poles") as the display name over
     // "Name" (e.g. "JP", often a person's initials on these tags) - falls
     // back to Name for records/tags that only ever populate that field.
-    cart.push({ id: record.id, name: record.item || record.name, price: record.price, quantity: 1, subVendor: record.subVendor || '' });
+    cart.push({ id: record.id, uniqueId: record.uniqueId || '', name: record.item || record.name, price: record.price, quantity: 1, subVendor: record.subVendor || '' });
   }
   renderCart();
   toast('Added to cart', 'success');
@@ -1931,7 +1931,7 @@ function renderItemPerformance(sales, items, vendorFilter) {
         existing.quantity += quantity;
         existing.revenue += revenue;
       } else {
-        soldById.set(item.id, { name: item.name || '(no name)', subVendor: item.subVendor || '', quantity, revenue });
+        soldById.set(item.id, { name: item.name || '(no name)', uniqueId: item.uniqueId || '', subVendor: item.subVendor || '', quantity, revenue });
       }
     }
   }
@@ -1946,7 +1946,7 @@ function renderItemPerformance(sales, items, vendorFilter) {
   // still sitting in inventory" report, not just the consignment subset.
   const unsoldRows = items
     .filter(r => !soldById.has(r.id) && (parseInt(r.quantity, 10) || 0) > 0 && (!vendorFilter || r.subVendor === vendorFilter))
-    .map(r => ({ name: r.item || r.name || '(no name)', subVendor: r.subVendor || '', quantity: parseInt(r.quantity, 10) || 0, price: r.price || '' }));
+    .map(r => ({ name: r.item || r.name || '(no name)', uniqueId: r.uniqueId || '', subVendor: r.subVendor || '', quantity: parseInt(r.quantity, 10) || 0, price: r.price || '' }));
 
   soldRowsForExport = soldRows;
   unsoldRowsForExport = unsoldRows;
@@ -1961,9 +1961,10 @@ function renderItemPerformance(sales, items, vendorFilter) {
     ? `
       <div class="sales-report-table-wrap">
         <table class="sales-report-table">
-          <thead><tr><th>Item</th><th>Sub-vendor</th><th>Qty Sold</th><th>Revenue</th></tr></thead>
+          <thead><tr><th>ID</th><th>Item</th><th>Sub-vendor</th><th>Qty Sold</th><th>Revenue</th></tr></thead>
           <tbody>${soldRows.map(r => `
             <tr>
+              <td>${esc(r.uniqueId || '—')}</td>
               <td>${esc(r.name)}</td>
               <td>${esc(r.subVendor || '—')}</td>
               <td>${r.quantity}</td>
@@ -1979,9 +1980,10 @@ function renderItemPerformance(sales, items, vendorFilter) {
     ? `
       <div class="sales-report-table-wrap">
         <table class="sales-report-table">
-          <thead><tr><th>Item</th><th>Sub-vendor</th><th>Qty</th><th>Price</th><th>Status</th></tr></thead>
+          <thead><tr><th>ID</th><th>Item</th><th>Sub-vendor</th><th>Qty</th><th>Price</th><th>Status</th></tr></thead>
           <tbody>${unsoldRows.map(r => `
             <tr>
+              <td>${esc(r.uniqueId || '—')}</td>
               <td>${esc(r.name)}</td>
               <td>${esc(r.subVendor || '—')}</td>
               <td>${r.quantity}</td>
@@ -2044,7 +2046,7 @@ function renderSalesReport(sales) {
 
   const rowsHtml = sales.map(sale => {
     const itemsSummary = sale.items
-      .map(item => `${item.quantity}x ${item.name || '(no name)'}${item.subVendor ? ` (${item.subVendor})` : ''}`)
+      .map(item => `${item.quantity}x ${item.name || '(no name)'}${item.uniqueId ? ` [ID: ${item.uniqueId}]` : ''}${item.subVendor ? ` (${item.subVendor})` : ''}`)
       .join(', ');
     return `
       <tr>
@@ -2089,7 +2091,7 @@ function closeSalesReportModal() {
 function exportSalesCSV(sales) {
   const rows = [['Timestamp', 'Items', 'Sub-vendors', 'Total', 'Payment Method']];
   sales.forEach(sale => {
-    const itemsSummary = sale.items.map(item => `${item.quantity}x ${item.name || '(no name)'}`).join('; ');
+    const itemsSummary = sale.items.map(item => `${item.quantity}x ${item.name || '(no name)'}${item.uniqueId ? ` [ID: ${item.uniqueId}]` : ''}`).join('; ');
     const subVendors = Array.from(new Set(sale.items.map(item => item.subVendor).filter(Boolean))).join('; ');
     rows.push([
       sale.createdAt || '',
@@ -2110,13 +2112,13 @@ function exportSalesCSV(sales) {
 }
 
 function exportItemPerformanceCSV(soldRows, unsoldRows) {
-  const rows = [['Status', 'Item', 'Sub-vendor', 'Quantity', 'Revenue/Price']];
+  const rows = [['Status', 'ID', 'Item', 'Sub-vendor', 'Quantity', 'Revenue/Price']];
   soldRows.forEach(r => {
-    rows.push(['Sold', `"${r.name.replace(/"/g, '""')}"`, `"${(r.subVendor || '').replace(/"/g, '""')}"`, r.quantity, r.revenue.toFixed(2)]);
+    rows.push(['Sold', r.uniqueId || '', `"${r.name.replace(/"/g, '""')}"`, `"${(r.subVendor || '').replace(/"/g, '""')}"`, r.quantity, r.revenue.toFixed(2)]);
   });
   unsoldRows.forEach(r => {
     const status = r.subVendor ? 'Unsold - return to vendor' : 'Unsold';
-    rows.push([status, `"${r.name.replace(/"/g, '""')}"`, `"${(r.subVendor || '').replace(/"/g, '""')}"`, r.quantity, r.price || '']);
+    rows.push([status, r.uniqueId || '', `"${r.name.replace(/"/g, '""')}"`, `"${(r.subVendor || '').replace(/"/g, '""')}"`, r.quantity, r.price || '']);
   });
   const csv = rows.map(r => r.join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv' });
@@ -2365,7 +2367,7 @@ async function pollPendingSale(saleId, attemptsLeft) {
 btnReviewTerminal.addEventListener('click', async () => {
   if (!cart.length) return;
   const saleId = crypto.randomUUID();
-  const items = cart.map(item => ({ id: item.id, name: item.name, price: item.price, quantity: item.quantity }));
+  const items = cart.map(item => ({ id: item.id, uniqueId: item.uniqueId || '', name: item.name, price: item.price, quantity: item.quantity, subVendor: item.subVendor || '' }));
   const total = items.reduce((sum, item) => sum + parseFloat(item.price) * item.quantity, 0);
   pendingSales.set(saleId, { items, total, status: 'queued', position: null, queueId: null, deviceId: null, checkoutId: null, cardStatus: null, pollTimer: null });
 
