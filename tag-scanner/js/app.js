@@ -1609,9 +1609,23 @@ recordsList.addEventListener('change', async e => {
   const select = e.target.closest('.status-select');
   if (!select) return;
   const id = select.dataset.id;
-  const status = select.value;
+  const newStatus = select.value;
+  const record = getCachedRecords().find(r => r.id === id);
+  const oldStatus = (record && record.status) || 'holding';
+
+  // Sold/Returned are "settled" states - changing away from either is
+  // more likely to be a misclick than Holding -> anything, so confirm
+  // before actually moving away from them.
+  if ((oldStatus === 'sold' || oldStatus === 'returned') && newStatus !== oldStatus) {
+    const confirmed = window.confirm(`This item is marked "${statusLabel(oldStatus)}". Change it to "${statusLabel(newStatus)}"?`);
+    if (!confirmed) {
+      select.value = oldStatus;
+      return;
+    }
+  }
+
   try {
-    await updateRecord(id, { status });
+    await updateRecord(id, { status: newStatus });
   } catch (err) {
     toast('Failed to update status: ' + err.message, 'error');
   }
