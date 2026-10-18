@@ -20,7 +20,7 @@ export function rowToRecord(row) {
     embeddingGemini: row.embedding_gemini ? JSON.parse(row.embedding_gemini) : null,
     embeddingClip: row.embedding_clip ? JSON.parse(row.embedding_clip) : null,
     otherFields: row.other_fields_json ? JSON.parse(row.other_fields_json) : {},
-    returned: !!row.returned,
+    status: row.status || 'holding',
     createdAt: row.created_at
   };
 }

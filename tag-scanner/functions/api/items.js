@@ -10,6 +10,8 @@
 import { resolveLocation } from '../_shared/location.js';
 import { rowToRecord } from '../_shared/items.js';
 
+const ALLOWED_STATUSES = ['holding', 'returned', 'sold'];
+
 export async function onRequestGet(context) {
   const { request, env } = context;
   const loc = await resolveLocation(request, env);
@@ -29,12 +31,13 @@ export async function onRequestPost(context) {
 
   const body = await request.json().catch(() => ({}));
   const id = crypto.randomUUID();
+  const status = ALLOWED_STATUSES.includes(body.status) ? body.status : 'holding';
 
   await env.DB.prepare(`
     INSERT INTO items (
       id, location_id, unique_id, name, item, brand, size, color, tag_color,
       sub_vendor, price, quantity, bin_location,
-      photo_data_url, embedding_gemini, embedding_clip, other_fields_json, returned
+      photo_data_url, embedding_gemini, embedding_clip, other_fields_json, status
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     id, loc.locationId,
@@ -45,7 +48,7 @@ export async function onRequestPost(context) {
     body.embeddingGemini ? JSON.stringify(body.embeddingGemini) : null,
     body.embeddingClip ? JSON.stringify(body.embeddingClip) : null,
     body.otherFields ? JSON.stringify(body.otherFields) : null,
-    body.returned ? 1 : 0
+    status
   ).run();
 
   const row = await env.DB.prepare('SELECT * FROM items WHERE id = ?').bind(id).first();

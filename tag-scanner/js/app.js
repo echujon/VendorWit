@@ -26,7 +26,6 @@ const fieldSize = document.getElementById('field-size');
 const fieldColor = document.getElementById('field-color');
 const fieldTagColor = document.getElementById('field-tag-color');
 const fieldSubVendor = document.getElementById('field-sub-vendor');
-const fieldReturned = document.getElementById('field-returned');
 const fieldPrice = document.getElementById('field-price');
 const fieldQuantity = document.getElementById('field-quantity');
 const fieldLocation = document.getElementById('field-location');
@@ -562,7 +561,7 @@ function showMatchCard(record, matchType = 'text', score = null) {
   document.getElementById('match-color').textContent = record.color || '—';
   document.getElementById('match-tagColor').textContent = record.tagColor || '—';
   document.getElementById('match-subVendor').textContent = record.subVendor || '—';
-  document.getElementById('match-returned').textContent = record.subVendor ? (record.returned ? 'Yes' : 'No') : '—';
+  document.getElementById('match-status').textContent = statusLabel(record.status);
   document.getElementById('match-price').textContent = record.price ? `$${record.price}` : '—';
   document.getElementById('match-quantity').textContent = record.quantity || '—';
   document.getElementById('match-location').textContent = record.location || '—';
@@ -880,7 +879,6 @@ function showNewItemForm(rawText, prefill = {}) {
   fieldColor.value = parsed.color || prefill.color || '';
   fieldTagColor.value = prefill.tagColor || '';
   fieldSubVendor.value = prefill.subVendor || '';
-  fieldReturned.checked = !!prefill.returned;
   fieldPrice.value = parsed.price || prefill.price || '';
   fieldQuantity.value = parsed.quantity || prefill.quantity || '';
   fieldLocation.value = parsed.location || prefill.location || '';
@@ -1413,7 +1411,6 @@ function collectFormData() {
     color: fieldColor.value.trim(),
     tagColor: fieldTagColor.value.trim(),
     subVendor: fieldSubVendor.value.trim(),
-    returned: fieldReturned.checked,
     price: fieldPrice.value.trim(),
     quantity: fieldQuantity.value.trim(),
     location: fieldLocation.value.trim(),
@@ -1494,7 +1491,7 @@ function resetScanArea() {
 // --- Records ---
 let recordsSort = { field: 'date', dir: 'desc' };
 let recordsSearchQuery = '';
-let soldItemIdsCache = new Set();
+const ITEM_STATUSES = ['holding', 'returned', 'sold'];
 
 function recordMatchesSearch(r, query) {
   if (!query) return true;
@@ -1503,13 +1500,9 @@ function recordMatchesSearch(r, query) {
   return haystack.includes(query);
 }
 
-// Sold takes priority over Returned (an item that eventually sold is done,
-// regardless of whether it was ever marked returned to the sub-vendor
-// beforehand) - Returned only applies to still-unsold consignment items.
-function recordStatus(r) {
-  if (soldItemIdsCache.has(r.id)) return 'Sold';
-  if (r.returned) return 'Returned';
-  return 'Holding';
+function statusLabel(status) {
+  const s = status || 'holding';
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 function renderRecordsList(records) {
@@ -1533,7 +1526,7 @@ function renderRecordsList(records) {
     quantity: r => parseInt(r.quantity, 10) || 0,
     location: r => r.location || '',
     date: r => new Date(r.createdAt).getTime() || 0,
-    status: r => recordStatus(r)
+    status: r => r.status || 'holding'
   });
 
   recordsList.innerHTML = `
@@ -1550,7 +1543,7 @@ function renderRecordsList(records) {
           ${sortTh('Status', 'status', recordsSort, 'records')}
           <th></th>
         </tr></thead>
-        <tbody>${rows.map(r => `
+        <tbody>${rows.map(r => { const status = r.status || 'holding'; return `
           <tr class="record-row" data-id="${r.id}">
             <td>${esc(r.uniqueId || '—')}</td>
             <td>${esc(r.item || r.name || '(no name)')}</td>
@@ -1559,23 +1552,21 @@ function renderRecordsList(records) {
             <td>${esc(r.quantity || '—')}</td>
             <td>${esc(r.location || '—')}</td>
             <td>${new Date(r.createdAt).toLocaleDateString()}</td>
-            <td><span class="status-badge status-${recordStatus(r).toLowerCase()}">${recordStatus(r)}</span></td>
+            <td>
+              <select class="status-select status-${status}" data-id="${r.id}">
+                ${ITEM_STATUSES.map(s => `<option value="${s}" ${s === status ? 'selected' : ''}>${statusLabel(s)}</option>`).join('')}
+              </select>
+            </td>
             <td><button class="record-btn delete" data-id="${r.id}" title="Delete">✕</button></td>
           </tr>
-        `).join('')}</tbody>
+        `; }).join('')}</tbody>
       </table>
     </div>
   `;
 }
 
 async function renderRecords() {
-  const [records, sales] = await Promise.all([getRecords(), getSales()]);
-  soldItemIdsCache = new Set();
-  for (const sale of sales) {
-    for (const item of sale.items) {
-      if (item.id) soldItemIdsCache.add(item.id);
-    }
-  }
+  const records = await getRecords();
   renderRecordsList(records);
 }
 
@@ -1596,6 +1587,8 @@ recordsList.addEventListener('click', async e => {
     return;
   }
 
+  if (e.target.closest('.status-select')) return;
+
   const btn = e.target.closest('.record-btn');
   const row = e.target.closest('.record-row');
   if (!row) return;
@@ -1610,6 +1603,19 @@ recordsList.addEventListener('click', async e => {
   if (!btn) {
     viewRecord(id);
   }
+});
+
+recordsList.addEventListener('change', async e => {
+  const select = e.target.closest('.status-select');
+  if (!select) return;
+  const id = select.dataset.id;
+  const status = select.value;
+  try {
+    await updateRecord(id, { status });
+  } catch (err) {
+    toast('Failed to update status: ' + err.message, 'error');
+  }
+  renderRecordsList(getCachedRecords());
 });
 
 recordsSearchInput.addEventListener('input', () => {
@@ -1718,7 +1724,7 @@ async function decrementInventoryForItems(items) {
     const record = getCachedRecords().find(r => r.id === item.id);
     if (!record) continue;
     const currentQty = parseInt(record.quantity, 10) || 0;
-    await updateRecord(item.id, { quantity: String(Math.max(0, currentQty - item.quantity)) });
+    await updateRecord(item.id, { quantity: String(Math.max(0, currentQty - item.quantity)), status: 'sold' });
   }
   await renderRecords();
 }
@@ -2140,7 +2146,7 @@ function renderItemPerformance(sales, items, vendorFilter) {
   // still sitting in inventory" report, not just the consignment subset.
   const unsoldRowsRaw = items
     .filter(r => !soldById.has(r.id) && (parseInt(r.quantity, 10) || 0) > 0 && (!vendorFilter || r.subVendor === vendorFilter))
-    .map(r => ({ name: r.item || r.name || '(no name)', uniqueId: r.uniqueId || '', subVendor: r.subVendor || '', quantity: parseInt(r.quantity, 10) || 0, price: r.price || '', returned: !!r.returned }));
+    .map(r => ({ name: r.item || r.name || '(no name)', uniqueId: r.uniqueId || '', subVendor: r.subVendor || '', quantity: parseInt(r.quantity, 10) || 0, price: r.price || '', returned: r.status === 'returned' }));
 
   const soldRows = sortRows(Array.from(soldById.values()), soldTableSort, {
     id: r => r.uniqueId,

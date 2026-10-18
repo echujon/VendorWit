@@ -14,6 +14,8 @@ const COLUMN_BY_FIELD = {
   photoDataUrl: 'photo_data_url'
 };
 
+const ALLOWED_STATUSES = ['holding', 'returned', 'sold'];
+
 export async function onRequestPatch(context) {
   const { request, env, params } = context;
   const loc = await resolveLocation(request, env);
@@ -28,7 +30,10 @@ export async function onRequestPatch(context) {
       values.push(body[field]);
     }
   }
-  if ('returned' in body) { sets.push('returned = ?'); values.push(body.returned ? 1 : 0); }
+  if ('status' in body) {
+    if (!ALLOWED_STATUSES.includes(body.status)) return json({ error: 'Invalid status' }, 400);
+    sets.push('status = ?'); values.push(body.status);
+  }
   if ('embeddingGemini' in body) { sets.push('embedding_gemini = ?'); values.push(JSON.stringify(body.embeddingGemini)); }
   if ('embeddingClip' in body) { sets.push('embedding_clip = ?'); values.push(JSON.stringify(body.embeddingClip)); }
   if ('otherFields' in body) { sets.push('other_fields_json = ?'); values.push(JSON.stringify(body.otherFields)); }
