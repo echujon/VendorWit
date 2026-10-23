@@ -134,6 +134,40 @@ pairing codes, the same no-auth posture the rest of the app has. An
 admin-vs-staff distinction (only an "admin" should be able to touch Square
 account connection) is a recognized, deliberately deferred next step.
 
+## Consignment registration
+
+The first of 3 planned public (non-staff) views: a self-service
+registration flow for consignors at a ski-swap event, entirely separate
+from the staff app's `join_code` auth. Staff set a shareable
+`consignment_slug` and paste the event's `consignment_terms` text per
+location (Settings → Consignment); consignors visit
+`https://<deployed-url>/consign/<slug>`, verify their email with a
+6-digit one-time code (5 min expiry, `migrations/0010_consignment.sql`'s
+`login_codes` table), then fill in phone/address and digitally sign the
+agreement (`consignors` table - `signed_terms_snapshot` captures the
+agreement text exactly as it read at signing time, since staff could edit
+it later). See `functions/api/consign/*.js`, `functions/_shared/
+consignorSession.js`, and `consign/index.html`.
+
+**Email provider setup (not configured yet)** - `functions/_shared/
+email.js` sends the code via whichever provider `EMAIL_PROVIDER` names in
+`wrangler.toml`'s `[vars]` (`"resend"` or `"smtp2go"` - both have similar
+enough HTTP APIs that supporting either is cheap). Until one is set up,
+`request-code.js` still works end-to-end except the actual send - the
+code is logged instead (`console.warn`, visible via `wrangler pages
+deployment tail`), so the registration flow is fully testable first.
+To actually send real emails:
+- **Resend**: create an account at resend.com, verify a sending domain,
+  set `EMAIL_PROVIDER = "resend"` and `RESEND_FROM_EMAIL` in
+  `wrangler.toml`'s `[vars]`, add `RESEND_API_KEY` as a dashboard Secret.
+- **SMTP2GO**: create an account at smtp2go.com, verify a sending domain,
+  set `EMAIL_PROVIDER = "smtp2go"` and `SMTP2GO_FROM_EMAIL` in
+  `wrangler.toml`'s `[vars]`, add `SMTP2GO_API_KEY` as a dashboard Secret.
+
+**Not built yet** (recognized, deliberately deferred): a staff-facing
+list/export of submitted registrations - right now the only way to see
+them is a direct D1 query against the `consignors` table.
+
 ## Routing: why `_worker.js` instead of file-based Functions
 
 This project uses Pages "Advanced Mode" - a single [`_worker.js`](_worker.js)

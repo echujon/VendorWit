@@ -23,6 +23,19 @@ SQUARE_WEBHOOK_NOTIFICATION_URL = "https://vendortools.pages.dev/api/webhooks/sq
 # functions/_shared/crypto.js and functions/_shared/square.js.
 SQUARE_OAUTH_CLIENT_ID = "sq0idp-bmDUDiEKmuvccx_2bohJcQ"
 
+# Consignment registration (functions/_shared/email.js) sends a one-time
+# login code by email - not configured yet. Once a provider is chosen,
+# uncomment EMAIL_PROVIDER below ("resend" or "smtp2go") and add the
+# matching FROM_EMAIL var here, plus the provider's API key as a
+# dashboard-managed Secret (RESEND_API_KEY or SMTP2GO_API_KEY) - same
+# convention as SQUARE_ACCESS_TOKEN. Until then, request-code.js still
+# works end-to-end except the actual send (logs the code instead - see
+# README.md's "Consignment registration" section).
+# EMAIL_PROVIDER = "resend"
+# RESEND_FROM_EMAIL = "registration@yourdomain.com"
+# EMAIL_PROVIDER = "smtp2go"
+# SMTP2GO_FROM_EMAIL = "registration@yourdomain.com"
+
 # TerminalQueue coordinates a shared pool of Square Terminals across
 # multiple simultaneous app instances. A Pages project can't self-host a
 # Durable Object class - Cloudflare requires it to live in a separately

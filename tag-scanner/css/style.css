@@ -625,6 +625,42 @@ main { flex: 1; padding: 1.25rem; padding-bottom: 5rem; display: flex; flex-dire
   background: var(--bg);
 }
 .settings-field input:focus { outline: none; border-color: var(--brand); }
+.settings-field textarea {
+  padding: 0.75rem;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--bg);
+  resize: vertical;
+  min-height: 100px;
+}
+.settings-field textarea:focus { outline: none; border-color: var(--brand); }
+
+.consign-status { font-size: 0.85rem; color: var(--danger); margin-top: 0.5rem; min-height: 1.2em; }
+.consign-terms-box {
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  padding: 0.9rem;
+  max-height: 260px;
+  overflow-y: auto;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  color: var(--text);
+}
+.consign-agree-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  font-size: 0.9rem;
+  color: var(--text);
+  margin: 1rem 0;
+  cursor: pointer;
+}
+.consign-agree-row input[type="checkbox"] { width: auto; margin-top: 0.2rem; }
 
 .save-notice {
   display: none;

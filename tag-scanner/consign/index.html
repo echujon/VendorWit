@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#c97b4b">
+  <title>Consignment Registration</title>
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header>
+    <div style="width:34px"></div>
+    <h1>Consignment Registration</h1>
+    <div style="width:34px"></div>
+  </header>
+
+  <div class="settings-body">
+    <div class="settings-section">
+      <div id="consign-loading">Loading...</div>
+
+      <div id="consign-not-found" style="display:none;">
+        <p>This registration link isn't recognized. Please double-check the link and try again.</p>
+      </div>
+
+      <div id="consign-step-email" style="display:none;">
+        <h2 class="consign-event-name"></h2>
+        <p>Enter your email to get a one-time registration code.</p>
+        <div class="settings-field">
+          <label for="consign-email">Email</label>
+          <input type="email" id="consign-email" placeholder="you@example.com">
+        </div>
+        <button class="btn btn-primary" id="btn-consign-request-code" type="button">Send code</button>
+        <div class="consign-status" id="consign-email-status"></div>
+      </div>
+
+      <div id="consign-step-code" style="display:none;">
+        <h2 class="consign-event-name"></h2>
+        <p>Enter the 6-digit code we emailed you. It expires in 5 minutes.</p>
+        <div class="settings-field">
+          <label for="consign-code">Code</label>
+          <input type="text" id="consign-code" inputmode="numeric" maxlength="6" placeholder="123456" style="font-size:1.5rem;letter-spacing:0.3em;text-align:center;">
+        </div>
+        <button class="btn btn-primary" id="btn-consign-verify" type="button">Verify</button>
+        <button class="btn btn-outline" id="btn-consign-resend" type="button" style="margin-top:0.5rem;">Resend code</button>
+        <div class="consign-status" id="consign-code-status"></div>
+      </div>
+
+      <div id="consign-step-form" style="display:none;">
+        <h2 class="consign-event-name"></h2>
+        <p>Registering as <strong id="consign-email-display"></strong>. Fill in the rest and sign below.</p>
+        <div class="settings-field">
+          <label for="consign-phone">Phone Number</label>
+          <input type="tel" id="consign-phone" placeholder="(555) 555-5555">
+        </div>
+        <div class="settings-field">
+          <label for="consign-address">Address</label>
+          <input type="text" id="consign-address" placeholder="123 Main St, City, ST 00000">
+        </div>
+        <div class="settings-field">
+          <label for="consign-terms-box">Consignment Agreement</label>
+          <div class="consign-terms-box" id="consign-terms-box"></div>
+        </div>
+        <div class="settings-field">
+          <label for="consign-signature">Type your full name to sign</label>
+          <input type="text" id="consign-signature" placeholder="Full legal name">
+        </div>
+        <label class="consign-agree-row">
+          <input type="checkbox" id="consign-agree">
+          I have read and agree to the terms above.
+        </label>
+        <button class="btn btn-primary" id="btn-consign-submit" type="button">Submit registration</button>
+        <div class="consign-status" id="consign-form-status"></div>
+      </div>
+
+      <div id="consign-step-done" style="display:none;">
+        <h2>You're all set!</h2>
+        <p id="consign-done-message"></p>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    const slug = location.pathname.replace(/^\/consign\/?/, '').split('/')[0] || '';
+
+    const loadingEl = document.getElementById('consign-loading');
+    const notFoundEl = document.getElementById('consign-not-found');
+    const stepEmail = document.getElementById('consign-step-email');
+    const stepCode = document.getElementById('consign-step-code');
+    const stepForm = document.getElementById('consign-step-form');
+    const stepDone = document.getElementById('consign-step-done');
+    const allSteps = [loadingEl, notFoundEl, stepEmail, stepCode, stepForm, stepDone];
+
+    let currentEmail = '';
+    let currentLocationName = '';
+    let currentTerms = '';
+
+    function showStep(el) {
+      for (const s of allSteps) s.style.display = s === el ? 'block' : 'none';
+    }
+
+    function setEventName(name) {
+      document.querySelectorAll('.consign-event-name').forEach(el => { el.textContent = name; });
+    }
+
+    function renderTerms() {
+      document.getElementById('consign-terms-box').textContent = currentTerms || 'No terms configured for this event yet.';
+    }
+
+    function fillFormDefaults(consignor) {
+      document.getElementById('consign-email-display').textContent = consignor.email;
+      document.getElementById('consign-phone').value = consignor.phone || '';
+      document.getElementById('consign-address').value = consignor.address || '';
+      document.getElementById('consign-signature').value = consignor.signedName || '';
+    }
+
+    function showDone(signedAt) {
+      const when = signedAt ? ` on ${new Date(signedAt).toLocaleDateString()}` : '';
+      document.getElementById('consign-done-message').textContent = `You're registered for ${currentLocationName}${when}.`;
+      showStep(stepDone);
+    }
+
+    async function init() {
+      if (!slug) { showStep(notFoundEl); return; }
+
+      let locData;
+      try {
+        const res = await fetch(`/api/consign/location?slug=${encodeURIComponent(slug)}`);
+        locData = await res.json();
+        if (!res.ok) { showStep(notFoundEl); return; }
+      } catch {
+        showStep(notFoundEl);
+        return;
+      }
+      currentLocationName = locData.locationName;
+      setEventName(currentLocationName);
+
+      const meRes = await fetch(`/api/consign/me?slug=${encodeURIComponent(slug)}`);
+      const me = await meRes.json();
+      if (me.authenticated) {
+        currentEmail = me.consignor.email;
+        currentTerms = me.terms;
+        if (me.consignor.signedAt) {
+          showDone(me.consignor.signedAt);
+        } else {
+          fillFormDefaults(me.consignor);
+          renderTerms();
+          showStep(stepForm);
+        }
+        return;
+      }
+
+      showStep(stepEmail);
+    }
+
+    document.getElementById('btn-consign-request-code').addEventListener('click', async () => {
+      const email = document.getElementById('consign-email').value.trim();
+      if (!email) return;
+      currentEmail = email;
+      const btn = document.getElementById('btn-consign-request-code');
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/consign/request-code', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slug, email })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to send code');
+        document.getElementById('consign-code-status').textContent = '';
+        showStep(stepCode);
+      } catch (err) {
+        document.getElementById('consign-email-status').textContent = err.message;
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById('btn-consign-verify').addEventListener('click', async () => {
+      const code = document.getElementById('consign-code').value.trim();
+      if (!code) return;
+      const btn = document.getElementById('btn-consign-verify');
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/consign/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slug, email: currentEmail, code })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Incorrect or expired code');
+        currentTerms = data.terms;
+        if (data.consignor.signedAt) {
+          showDone(data.consignor.signedAt);
+        } else {
+          fillFormDefaults(data.consignor);
+          renderTerms();
+          showStep(stepForm);
+        }
+      } catch (err) {
+        document.getElementById('consign-code-status').textContent = err.message;
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById('btn-consign-resend').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-consign-resend');
+      btn.disabled = true;
+      try {
+        await fetch('/api/consign/request-code', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slug, email: currentEmail })
+        });
+        document.getElementById('consign-code-status').textContent = 'A new code has been sent.';
+      } finally {
+        setTimeout(() => { btn.disabled = false; }, 2000);
+      }
+    });
+
+    document.getElementById('btn-consign-submit').addEventListener('click', async () => {
+      const phone = document.getElementById('consign-phone').value.trim();
+      const address = document.getElementById('consign-address').value.trim();
+      const signedName = document.getElementById('consign-signature').value.trim();
+      const agreedToTerms = document.getElementById('consign-agree').checked;
+      const statusEl = document.getElementById('consign-form-status');
+      if (!phone || !address || !signedName || !agreedToTerms) {
+        statusEl.textContent = 'Phone, address, signature, and agreement are all required.';
+        return;
+      }
+      const btn = document.getElementById('btn-consign-submit');
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/consign/submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slug, phone, address, signedName, agreedToTerms })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to submit');
+        showDone(null);
+      } catch (err) {
+        statusEl.textContent = err.message;
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    init();
+  </script>
+</body>
+</html>

@@ -40,6 +40,12 @@ import * as squareDeviceCodes from './functions/api/square/device-codes.js';
 import * as squareDeviceCodesStatus from './functions/api/square/device-codes-status.js';
 import * as squareCashPayment from './functions/api/square/cash-payment.js';
 import * as squareCashReceipt from './functions/api/square/cash-receipt.js';
+import * as consignLocation from './functions/api/consign/location.js';
+import * as consignRequestCode from './functions/api/consign/request-code.js';
+import * as consignVerify from './functions/api/consign/verify.js';
+import * as consignMe from './functions/api/consign/me.js';
+import * as consignSubmit from './functions/api/consign/submit.js';
+import * as consignSettings from './functions/api/consign/settings.js';
 
 export default {
   async fetch(request, env, ctx) {
@@ -158,6 +164,36 @@ export default {
     }
     if (pathname === '/api/square/cash-receipt' && method === 'POST') {
       return squareCashReceipt.onRequestPost(context);
+    }
+
+    if (pathname === '/api/consign/location' && method === 'GET') {
+      return consignLocation.onRequestGet(context);
+    }
+    if (pathname === '/api/consign/request-code' && method === 'POST') {
+      return consignRequestCode.onRequestPost(context);
+    }
+    if (pathname === '/api/consign/verify' && method === 'POST') {
+      return consignVerify.onRequestPost(context);
+    }
+    if (pathname === '/api/consign/me' && method === 'GET') {
+      return consignMe.onRequestGet(context);
+    }
+    if (pathname === '/api/consign/submit' && method === 'POST') {
+      return consignSubmit.onRequestPost(context);
+    }
+    if (pathname === '/api/consign/settings') {
+      if (method === 'GET') return consignSettings.onRequestGet(context);
+      if (method === 'POST') return consignSettings.onRequestPost(context);
+    }
+
+    // Public consignor registration shell - Pages' ASSETS binding only
+    // resolves exact paths, so every /consign/<slug> sub-path is
+    // rewritten here to the one static shell; client JS reads the slug
+    // from location.pathname itself.
+    if (/^\/consign(?:\/.*)?$/.test(pathname) && method === 'GET') {
+      const assetUrl = new URL(request.url);
+      assetUrl.pathname = '/consign/index.html';
+      return env.ASSETS.fetch(new Request(assetUrl, request));
     }
 
     // Not an API route - serve the static site (index.html, css/, js/,

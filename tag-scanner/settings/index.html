@@ -79,6 +79,28 @@
     </div>
 
     <div class="settings-section">
+      <h2>Consignment</h2>
+      <p>Lets consignors register themselves for this event at a public link: confirm the event, verify their email with a one-time code, then fill in contact info and sign the consignment agreement below. Requires a location to be joined/created above first.</p>
+      <div class="settings-field">
+        <label for="consignment-slug">Shareable Link Name</label>
+        <input type="text" id="consignment-slug" placeholder="e.g. fort-collins-2026" style="text-transform:lowercase;">
+      </div>
+      <div class="settings-field">
+        <label for="consignment-terms">Consignment Agreement Text</label>
+        <textarea id="consignment-terms" rows="8" placeholder="Paste this event's full consignment agreement text here - shown to consignors before they sign."></textarea>
+      </div>
+      <button class="btn btn-outline" id="btn-save-consignment" type="button">Save</button>
+      <div id="consignment-status" style="margin-top:0.5rem;color:var(--muted,#8a7060);font-size:0.85rem;"></div>
+      <div id="consignment-share-display" style="display:none;background:var(--bg);border:1px solid var(--border,#e8d5c0);border-radius:8px;padding:0.75rem 1rem;margin-top:0.75rem;">
+        <span style="font-size:0.75rem;color:var(--muted,#8a7060);text-transform:uppercase;letter-spacing:0.05em;">Share this link with consignors</span>
+        <div style="display:flex;align-items:center;gap:0.75rem;margin-top:0.25rem;">
+          <span id="consignment-share-url" style="font-size:0.9rem;font-weight:600;word-break:break-all;"></span>
+          <button class="btn btn-outline" id="btn-copy-consignment-url" type="button" style="font-size:0.8rem;padding:0.3rem 0.6rem;flex-shrink:0;">Copy</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-section">
       <h2>Square Account</h2>
       <p>Connect your organization's own Square account so Terminal pairing codes can be generated right here, instead of running commands manually. Requires a location to be joined/created above first.</p>
       <div id="square-connection-status" style="font-weight:600;margin-bottom:0.75rem;"></div>
@@ -191,6 +213,7 @@
       renderLocationStatus();
       loadTerminals();
       renderSquareConnectionStatus();
+      loadConsignmentSettings();
     });
 
     document.getElementById('btn-create-org').addEventListener('click', async () => {
@@ -211,6 +234,7 @@
         renderLocationStatus();
         loadTerminals();
         renderSquareConnectionStatus();
+        loadConsignmentSettings();
       } catch (err) {
         alert(err.message);
       } finally {
@@ -346,6 +370,70 @@
     });
 
     renderSquareConnectionStatus();
+
+    // --- Consignment registration ---
+    async function loadConsignmentSettings() {
+      const statusEl = document.getElementById('consignment-status');
+      const shareDisplay = document.getElementById('consignment-share-display');
+      if (!getLocationCode()) {
+        statusEl.textContent = 'Join or create a location above first.';
+        shareDisplay.style.display = 'none';
+        return;
+      }
+      try {
+        const res = await fetch('/api/consign/settings', { headers: locationHeaders() });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to load');
+        document.getElementById('consignment-slug').value = data.slug || '';
+        document.getElementById('consignment-terms').value = data.terms || '';
+        statusEl.textContent = '';
+        if (data.shareUrl) {
+          document.getElementById('consignment-share-url').textContent = data.shareUrl;
+          shareDisplay.style.display = 'block';
+        } else {
+          shareDisplay.style.display = 'none';
+        }
+      } catch (err) {
+        statusEl.textContent = err.message;
+      }
+    }
+
+    document.getElementById('btn-save-consignment').addEventListener('click', async () => {
+      const slug = document.getElementById('consignment-slug').value.trim().toLowerCase();
+      const terms = document.getElementById('consignment-terms').value.trim();
+      const statusEl = document.getElementById('consignment-status');
+      const btn = document.getElementById('btn-save-consignment');
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/consign/settings', {
+          method: 'POST',
+          headers: locationHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ slug, terms })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to save');
+        statusEl.textContent = 'Saved.';
+        document.getElementById('consignment-share-url').textContent = data.shareUrl;
+        document.getElementById('consignment-share-display').style.display = 'block';
+      } catch (err) {
+        statusEl.textContent = err.message;
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById('btn-copy-consignment-url').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-copy-consignment-url');
+      try {
+        await navigator.clipboard.writeText(document.getElementById('consignment-share-url').textContent);
+        btn.textContent = 'Copied!';
+        setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+      } catch {
+        alert('Could not copy automatically — the link is shown above, copy it manually.');
+      }
+    });
+
+    loadConsignmentSettings();
 
     const settings = getSettings();
     document.getElementById('anthropic-key').value = settings.anthropicKey || '';
