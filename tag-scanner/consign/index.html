@@ -76,6 +76,36 @@
       <div id="consign-step-done" style="display:none;">
         <h2>You're all set!</h2>
         <p id="consign-done-message"></p>
+
+        <div class="consign-items-section">
+          <h3>Your Items</h3>
+          <div id="consign-items-list"></div>
+        </div>
+
+        <h3 style="margin-top:1.25rem;">Add an Item</h3>
+        <p>Items are reviewed by staff before they're accepted - bring the physical item at drop-off to be tagged.</p>
+        <div class="settings-field">
+          <label for="consign-item-name">Item Name</label>
+          <input type="text" id="consign-item-name" placeholder="e.g. Burton Snowboard">
+        </div>
+        <div class="settings-field">
+          <label for="consign-item-description">Description (optional)</label>
+          <input type="text" id="consign-item-description" placeholder="e.g. 158cm, used one season">
+        </div>
+        <div class="settings-field">
+          <label for="consign-item-price">Price ($)</label>
+          <input type="text" id="consign-item-price" inputmode="decimal" placeholder="e.g. 150.00">
+        </div>
+        <div class="settings-field">
+          <label for="consign-item-quantity">Quantity</label>
+          <input type="text" id="consign-item-quantity" inputmode="numeric" value="1">
+        </div>
+        <div class="settings-field">
+          <label for="consign-item-photo">Photo (optional)</label>
+          <input type="file" id="consign-item-photo" accept="image/*">
+        </div>
+        <button class="btn btn-primary" id="btn-consign-add-item" type="button">Add Item</button>
+        <div class="consign-status" id="consign-item-status"></div>
       </div>
     </div>
   </div>
@@ -118,7 +148,113 @@
       const when = signedAt ? ` on ${new Date(signedAt).toLocaleDateString()}` : '';
       document.getElementById('consign-done-message').textContent = `You're registered for ${currentLocationName}${when}.`;
       showStep(stepDone);
+      loadMyItems();
     }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    let myItemsCache = [];
+
+    async function loadMyItems() {
+      try {
+        const res = await fetch(`/api/consign/items?slug=${encodeURIComponent(slug)}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        myItemsCache = data.items;
+        renderMyItems();
+      } catch {
+        // Non-fatal - the add-item form still works even if this fails to load.
+      }
+    }
+
+    function renderMyItems() {
+      const list = document.getElementById('consign-items-list');
+      if (!myItemsCache.length) {
+        list.innerHTML = '<p style="color:var(--muted,#8a7060);font-size:0.85rem;">No items added yet.</p>';
+        return;
+      }
+      list.innerHTML = myItemsCache.map(item => `
+        <div class="consign-item-row" data-id="${item.id}">
+          ${item.photoDataUrl ? `<img src="${item.photoDataUrl}" class="consign-item-photo" alt="">` : ''}
+          <div class="consign-item-info">
+            <div class="consign-item-name">${escapeHtml(item.name)}</div>
+            <div class="consign-item-meta">$${escapeHtml(item.price)} &times; ${escapeHtml(item.quantity)}</div>
+          </div>
+          <span class="consign-item-badge consign-item-badge-${item.status}">${escapeHtml(item.status)}</span>
+          ${item.status === 'pending' ? `<button class="consign-item-remove" data-id="${item.id}" title="Remove">✕</button>` : ''}
+        </div>
+      `).join('');
+    }
+
+    document.getElementById('consign-items-list').addEventListener('click', async e => {
+      const btn = e.target.closest('.consign-item-remove');
+      if (!btn) return;
+      try {
+        const res = await fetch(`/api/consign/items/${btn.dataset.id}?slug=${encodeURIComponent(slug)}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to remove item');
+        await loadMyItems();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+
+    function resizePhotoToDataUrl(file, maxDim = 256, quality = 0.7) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => {
+          const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.round(img.width * scale);
+          canvas.height = Math.round(img.height * scale);
+          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+          URL.revokeObjectURL(url);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Failed to load image')); };
+        img.src = url;
+      });
+    }
+
+    document.getElementById('btn-consign-add-item').addEventListener('click', async () => {
+      const name = document.getElementById('consign-item-name').value.trim();
+      const description = document.getElementById('consign-item-description').value.trim();
+      const price = document.getElementById('consign-item-price').value.trim();
+      const quantity = document.getElementById('consign-item-quantity').value.trim() || '1';
+      const photoFile = document.getElementById('consign-item-photo').files[0];
+      const statusEl = document.getElementById('consign-item-status');
+      if (!name || !price) {
+        statusEl.textContent = 'Name and price are required.';
+        return;
+      }
+      const btn = document.getElementById('btn-consign-add-item');
+      btn.disabled = true;
+      try {
+        let photoDataUrl = null;
+        if (photoFile) photoDataUrl = await resizePhotoToDataUrl(photoFile);
+        const res = await fetch('/api/consign/items', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slug, name, description, price, quantity, photoDataUrl })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to add item');
+        document.getElementById('consign-item-name').value = '';
+        document.getElementById('consign-item-description').value = '';
+        document.getElementById('consign-item-price').value = '';
+        document.getElementById('consign-item-quantity').value = '1';
+        document.getElementById('consign-item-photo').value = '';
+        statusEl.textContent = 'Item added!';
+        await loadMyItems();
+      } catch (err) {
+        statusEl.textContent = err.message;
+      } finally {
+        btn.disabled = false;
+      }
+    });
 
     async function init() {
       if (!slug) { showStep(notFoundEl); return; }

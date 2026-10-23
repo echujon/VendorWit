@@ -662,6 +662,41 @@ main { flex: 1; padding: 1.25rem; padding-bottom: 5rem; display: flex; flex-dire
 }
 .consign-agree-row input[type="checkbox"] { width: auto; margin-top: 0.2rem; }
 
+.consign-items-section { margin-top: 1rem; }
+.consign-item-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.consign-item-row:last-child { border-bottom: none; }
+.consign-item-photo { width: 44px; height: 44px; border-radius: 6px; object-fit: cover; flex-shrink: 0; }
+.consign-item-info { flex: 1; min-width: 0; }
+.consign-item-name { font-weight: 600; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.consign-item-meta { font-size: 0.8rem; color: var(--muted); }
+.consign-item-badge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.consign-item-badge-pending { background: #fdf3e2; color: #a3730a; }
+.consign-item-badge-approved { background: #e5f5e6; color: var(--success); }
+.consign-item-badge-rejected { background: #fdecea; color: var(--danger); }
+.consign-item-remove {
+  background: none;
+  border: none;
+  color: var(--danger);
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 0.25rem;
+  flex-shrink: 0;
+}
+
 .save-notice {
   display: none;
   color: var(--success);

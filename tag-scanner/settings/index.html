@@ -91,6 +91,10 @@
         <p style="font-size:0.78rem;color:var(--muted,#8a7060);margin:0;">Shown to consignors on the registration page - can be different from this location's own name above, if the same location hosts a differently-branded event. Leave blank to just show the location's name.</p>
       </div>
       <div class="settings-field">
+        <label for="consignment-max-items">Max Items Per Consignor (optional)</label>
+        <input type="text" id="consignment-max-items" inputmode="numeric" placeholder="e.g. 26 - leave blank for no limit">
+      </div>
+      <div class="settings-field">
         <label for="consignment-terms">Consignment Agreement Text</label>
         <textarea id="consignment-terms" rows="8" placeholder="Paste this event's full consignment agreement text here - shown to consignors before they sign."></textarea>
       </div>
@@ -103,6 +107,10 @@
           <button class="btn btn-outline" id="btn-copy-consignment-url" type="button" style="font-size:0.8rem;padding:0.3rem 0.6rem;flex-shrink:0;">Copy</button>
         </div>
       </div>
+
+      <h3 style="margin-top:1.25rem;font-size:0.85rem;">Pending Items</h3>
+      <p style="font-size:0.8rem;color:var(--muted,#8a7060);margin-bottom:0.75rem;">Items consignors submitted online, awaiting your approval. Approving doesn't add it to inventory yet - still tag/scan it normally once it physically arrives.</p>
+      <div id="consignment-review-list"></div>
     </div>
 
     <div class="settings-section">
@@ -219,6 +227,7 @@
       loadTerminals();
       renderSquareConnectionStatus();
       loadConsignmentSettings();
+      loadReviewItems();
     });
 
     document.getElementById('btn-create-org').addEventListener('click', async () => {
@@ -240,6 +249,7 @@
         loadTerminals();
         renderSquareConnectionStatus();
         loadConsignmentSettings();
+        loadReviewItems();
       } catch (err) {
         alert(err.message);
       } finally {
@@ -391,6 +401,7 @@
         if (!res.ok) throw new Error(data.error || 'Failed to load');
         document.getElementById('consignment-slug').value = data.slug || '';
         document.getElementById('consignment-event-name').value = data.eventName || '';
+        document.getElementById('consignment-max-items').value = data.maxItems || '';
         document.getElementById('consignment-terms').value = data.terms || '';
         statusEl.textContent = '';
         if (data.shareUrl) {
@@ -407,6 +418,7 @@
     document.getElementById('btn-save-consignment').addEventListener('click', async () => {
       const slug = document.getElementById('consignment-slug').value.trim().toLowerCase();
       const eventName = document.getElementById('consignment-event-name').value.trim();
+      const maxItems = document.getElementById('consignment-max-items').value.trim();
       const terms = document.getElementById('consignment-terms').value.trim();
       const statusEl = document.getElementById('consignment-status');
       const btn = document.getElementById('btn-save-consignment');
@@ -415,7 +427,7 @@
         const res = await fetch('/api/consign/settings', {
           method: 'POST',
           headers: locationHeaders({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({ slug, eventName, terms })
+          body: JSON.stringify({ slug, eventName, terms, maxItems })
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to save');
@@ -440,7 +452,59 @@
       }
     });
 
+    async function loadReviewItems() {
+      const list = document.getElementById('consignment-review-list');
+      if (!getLocationCode()) { list.innerHTML = ''; return; }
+      try {
+        const res = await fetch('/api/consign/review-items?status=pending', { headers: locationHeaders() });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to load');
+        renderReviewItems(data.items);
+      } catch (err) {
+        list.innerHTML = `<p style="color:var(--muted,#8a7060);font-size:0.85rem;">${escapeHtml(err.message)}</p>`;
+      }
+    }
+
+    function renderReviewItems(items) {
+      const list = document.getElementById('consignment-review-list');
+      if (!items.length) {
+        list.innerHTML = '<p style="color:var(--muted,#8a7060);font-size:0.85rem;">Nothing pending review.</p>';
+        return;
+      }
+      list.innerHTML = items.map(item => `
+        <div class="consign-item-row" data-id="${item.id}">
+          ${item.photoDataUrl ? `<img src="${item.photoDataUrl}" class="consign-item-photo" alt="">` : ''}
+          <div class="consign-item-info">
+            <div class="consign-item-name">${escapeHtml(item.name)}</div>
+            <div class="consign-item-meta">$${escapeHtml(item.price)} &times; ${escapeHtml(item.quantity)} - ${escapeHtml(item.consignorEmail)}</div>
+          </div>
+          <button class="btn btn-outline" data-action="approved" data-id="${item.id}" type="button" style="font-size:0.8rem;padding:0.3rem 0.6rem;flex-shrink:0;">Approve</button>
+          <button class="btn btn-secondary" data-action="rejected" data-id="${item.id}" type="button" style="font-size:0.8rem;padding:0.3rem 0.6rem;flex-shrink:0;">Reject</button>
+        </div>
+      `).join('');
+    }
+
+    document.getElementById('consignment-review-list').addEventListener('click', async e => {
+      const btn = e.target.closest('button[data-action]');
+      if (!btn) return;
+      btn.disabled = true;
+      try {
+        const res = await fetch(`/api/consign/review-items/${btn.dataset.id}`, {
+          method: 'PATCH',
+          headers: locationHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ status: btn.dataset.action })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to update');
+        await loadReviewItems();
+      } catch (err) {
+        alert(err.message);
+        btn.disabled = false;
+      }
+    });
+
     loadConsignmentSettings();
+    loadReviewItems();
 
     const settings = getSettings();
     document.getElementById('anthropic-key').value = settings.anthropicKey || '';

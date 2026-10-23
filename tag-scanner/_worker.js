@@ -46,6 +46,10 @@ import * as consignVerify from './functions/api/consign/verify.js';
 import * as consignMe from './functions/api/consign/me.js';
 import * as consignSubmit from './functions/api/consign/submit.js';
 import * as consignSettings from './functions/api/consign/settings.js';
+import * as consignItems from './functions/api/consign/items.js';
+import * as consignItemsById from './functions/api/consign/items/[id].js';
+import * as consignReviewItems from './functions/api/consign/review-items.js';
+import * as consignReviewItemsById from './functions/api/consign/review-items/[id].js';
 
 export default {
   async fetch(request, env, ctx) {
@@ -184,6 +188,23 @@ export default {
     if (pathname === '/api/consign/settings') {
       if (method === 'GET') return consignSettings.onRequestGet(context);
       if (method === 'POST') return consignSettings.onRequestPost(context);
+    }
+    if (pathname === '/api/consign/items') {
+      if (method === 'GET') return consignItems.onRequestGet(context);
+      if (method === 'POST') return consignItems.onRequestPost(context);
+    }
+    const consignItemIdMatch = pathname.match(/^\/api\/consign\/items\/([^/]+)$/);
+    if (consignItemIdMatch && method === 'DELETE') {
+      context.params = { id: consignItemIdMatch[1] };
+      return consignItemsById.onRequestDelete(context);
+    }
+    if (pathname === '/api/consign/review-items' && method === 'GET') {
+      return consignReviewItems.onRequestGet(context);
+    }
+    const reviewItemIdMatch = pathname.match(/^\/api\/consign\/review-items\/([^/]+)$/);
+    if (reviewItemIdMatch && method === 'PATCH') {
+      context.params = { id: reviewItemIdMatch[1] };
+      return consignReviewItemsById.onRequestPatch(context);
     }
 
     // Public consignor registration shell - Pages' ASSETS binding only
