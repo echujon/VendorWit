@@ -189,10 +189,15 @@ export default {
     // Public consignor registration shell - Pages' ASSETS binding only
     // resolves exact paths, so every /consign/<slug> sub-path is
     // rewritten here to the one static shell; client JS reads the slug
-    // from location.pathname itself.
+    // from location.pathname itself. Rewriting to the directory path
+    // ('/consign/', which Pages resolves to consign/index.html's content
+    // directly) rather than the literal filename ('/consign/index.html')
+    // matters: requesting that literal filename gets a 308 redirect back
+    // to the directory form from Pages' own asset server, which would
+    // then match this same regex again - an infinite redirect loop.
     if (/^\/consign(?:\/.*)?$/.test(pathname) && method === 'GET') {
       const assetUrl = new URL(request.url);
-      assetUrl.pathname = '/consign/index.html';
+      assetUrl.pathname = '/consign/';
       return env.ASSETS.fetch(new Request(assetUrl, request));
     }
 
