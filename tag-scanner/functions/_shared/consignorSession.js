@@ -52,7 +52,7 @@ export async function resolveConsignorSession(request, env, slug) {
 
   const row = await env.DB.prepare(`
     SELECT c.id, c.email, c.phone, c.address, c.signed_name, c.signed_at,
-           l.name AS location_name, l.consignment_terms, l.consignment_slug,
+           l.name AS location_name, l.consignment_event_name, l.consignment_terms, l.consignment_slug,
            s.expires_at
     FROM consignor_sessions s
     JOIN consignors c ON c.id = s.consignor_id
@@ -74,7 +74,7 @@ export async function resolveConsignorSession(request, env, slug) {
       signedName: row.signed_name || '',
       signedAt: row.signed_at || null
     },
-    location: { name: row.location_name, terms: row.consignment_terms || '' }
+    location: { name: row.consignment_event_name || row.location_name, terms: row.consignment_terms || '' }
   };
 }
 

@@ -22,7 +22,7 @@ export async function onRequestPost(context) {
   if (!slug || !email || !code) return json({ error: 'slug, email, and code are required' }, 400);
 
   const location = await env.DB.prepare(
-    'SELECT id, name, consignment_terms FROM locations WHERE consignment_slug = ?'
+    'SELECT id, name, consignment_event_name, consignment_terms FROM locations WHERE consignment_slug = ?'
   ).bind(slug).first();
   if (!location) return json({ error: 'Unknown registration link' }, 404);
 
@@ -54,7 +54,7 @@ export async function onRequestPost(context) {
   `).bind(sessionToken, consignor.id, Date.now() + SESSION_TTL_MS).run();
 
   return new Response(JSON.stringify({
-    locationName: location.name,
+    locationName: location.consignment_event_name || location.name,
     terms: location.consignment_terms || '',
     consignor: {
       email,

@@ -11,11 +11,11 @@ export async function onRequestGet(context) {
   if (!slug) return json({ error: 'slug is required' }, 400);
 
   const row = await env.DB.prepare(
-    'SELECT name FROM locations WHERE consignment_slug = ?'
+    'SELECT name, consignment_event_name FROM locations WHERE consignment_slug = ?'
   ).bind(slug).first();
   if (!row) return json({ error: 'Unknown registration link' }, 404);
 
-  return json({ locationName: row.name });
+  return json({ locationName: row.consignment_event_name || row.name });
 }
 
 function json(data, status = 200) {

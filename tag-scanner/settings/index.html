@@ -86,6 +86,11 @@
         <input type="text" id="consignment-slug" placeholder="e.g. fort-collins-2026" style="text-transform:lowercase;">
       </div>
       <div class="settings-field">
+        <label for="consignment-event-name">Public Event Name</label>
+        <input type="text" id="consignment-event-name" placeholder="e.g. Denver 2026 Ski Swap">
+        <p style="font-size:0.78rem;color:var(--muted,#8a7060);margin:0;">Shown to consignors on the registration page - can be different from this location's own name above, if the same location hosts a differently-branded event. Leave blank to just show the location's name.</p>
+      </div>
+      <div class="settings-field">
         <label for="consignment-terms">Consignment Agreement Text</label>
         <textarea id="consignment-terms" rows="8" placeholder="Paste this event's full consignment agreement text here - shown to consignors before they sign."></textarea>
       </div>
@@ -385,6 +390,7 @@
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to load');
         document.getElementById('consignment-slug').value = data.slug || '';
+        document.getElementById('consignment-event-name').value = data.eventName || '';
         document.getElementById('consignment-terms').value = data.terms || '';
         statusEl.textContent = '';
         if (data.shareUrl) {
@@ -400,6 +406,7 @@
 
     document.getElementById('btn-save-consignment').addEventListener('click', async () => {
       const slug = document.getElementById('consignment-slug').value.trim().toLowerCase();
+      const eventName = document.getElementById('consignment-event-name').value.trim();
       const terms = document.getElementById('consignment-terms').value.trim();
       const statusEl = document.getElementById('consignment-status');
       const btn = document.getElementById('btn-save-consignment');
@@ -408,7 +415,7 @@
         const res = await fetch('/api/consign/settings', {
           method: 'POST',
           headers: locationHeaders({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({ slug, terms })
+          body: JSON.stringify({ slug, eventName, terms })
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to save');

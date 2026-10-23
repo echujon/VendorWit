@@ -1,7 +1,7 @@
 // Routed manually (see _worker.js): /api/consign/settings
-// GET  - current consignment_slug/consignment_terms for the caller's own
+// GET  - current consignment_slug/eventName/terms for the caller's own
 //        location, plus the full shareable URL once a slug is set
-// POST { slug, terms } - update them
+// POST { slug, eventName, terms } - update them
 // Staff-authenticated via the existing X-Location-Code / resolveLocation
 // (see functions/_shared/location.js) - NOT the public consignor flow in
 // the rest of this directory. Scoped to the caller's own location, same
@@ -17,11 +17,12 @@ export async function onRequestGet(context) {
   if (loc.error) return json({ error: loc.error }, loc.status);
 
   const row = await env.DB.prepare(
-    'SELECT consignment_slug, consignment_terms FROM locations WHERE id = ?'
+    'SELECT consignment_slug, consignment_event_name, consignment_terms FROM locations WHERE id = ?'
   ).bind(loc.locationId).first();
 
   return json({
     slug: row.consignment_slug || '',
+    eventName: row.consignment_event_name || '',
     terms: row.consignment_terms || '',
     shareUrl: row.consignment_slug ? `${new URL(request.url).origin}/consign/${row.consignment_slug}` : null
   });
@@ -34,6 +35,7 @@ export async function onRequestPost(context) {
 
   const body = await request.json().catch(() => ({}));
   const slug = (body.slug || '').trim().toLowerCase();
+  const eventName = (body.eventName || '').trim();
   const terms = (body.terms || '').trim();
   if (!SLUG_RE.test(slug)) {
     return json({ error: 'Link must be 3-40 characters: lowercase letters, numbers, and hyphens only' }, 400);
@@ -45,11 +47,12 @@ export async function onRequestPost(context) {
   if (existing) return json({ error: 'That link is already in use - pick a different one' }, 409);
 
   await env.DB.prepare(
-    'UPDATE locations SET consignment_slug = ?, consignment_terms = ? WHERE id = ?'
-  ).bind(slug, terms, loc.locationId).run();
+    'UPDATE locations SET consignment_slug = ?, consignment_event_name = ?, consignment_terms = ? WHERE id = ?'
+  ).bind(slug, eventName || null, terms, loc.locationId).run();
 
   return json({
     slug,
+    eventName,
     terms,
     shareUrl: `${new URL(request.url).origin}/consign/${slug}`
   });
