@@ -15,6 +15,7 @@ export async function onRequestGet(context) {
   if (!env.TERMINAL_QUEUE) return json({ error: 'Server not configured' }, 500);
   const loc = await resolveLocation(request, env);
   if (loc.error) return json({ error: loc.error }, loc.status);
+  if (loc.role !== 'admin') return json({ error: 'Admins only' }, 403);
   const res = await forwardToQueue(env, request, '/terminals', loc.locationId);
   return new Response(res.body, res);
 }
@@ -24,6 +25,7 @@ export async function onRequestPost(context) {
   if (!env.TERMINAL_QUEUE) return json({ error: 'Server not configured' }, 500);
   const loc = await resolveLocation(request, env);
   if (loc.error) return json({ error: loc.error }, loc.status);
+  if (loc.role !== 'admin') return json({ error: 'Admins only' }, 403);
 
   const body = await request.json().catch(() => ({}));
 
@@ -51,6 +53,7 @@ export async function onRequestDelete(context) {
   if (!env.TERMINAL_QUEUE) return json({ error: 'Server not configured' }, 500);
   const loc = await resolveLocation(request, env);
   if (loc.error) return json({ error: loc.error }, loc.status);
+  if (loc.role !== 'admin') return json({ error: 'Admins only' }, 403);
   const res = await forwardToQueue(env, request, '/terminals', loc.locationId);
   return new Response(res.body, res);
 }

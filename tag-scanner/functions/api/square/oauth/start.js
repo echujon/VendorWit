@@ -1,9 +1,8 @@
 // Routed manually (see _worker.js): GET /api/square/oauth/start
 // Redirects to Square's OAuth consent screen for the organization the
-// caller's location resolves to. No role gating yet - anyone with a
-// location join code can trigger this, same as every other endpoint in
-// the app today (see the plan's "Explicitly deferred: admin vs. staff
-// roles" note).
+// caller's location resolves to. Admin only - a Vendor Aide logging in
+// with the aide code (see functions/_shared/location.js) can't connect
+// or reconnect the organization's Square account.
 
 import { resolveLocation } from '../../../_shared/location.js';
 import { squareBaseUrl } from '../../../_shared/square.js';
@@ -15,6 +14,7 @@ export async function onRequestGet(context) {
 
   const loc = await resolveLocation(request, env);
   if (loc.error) return new Response(loc.error, { status: loc.status });
+  if (loc.role !== 'admin') return new Response('Admins only', { status: 403 });
 
   const state = crypto.randomUUID();
   await env.DB.prepare(

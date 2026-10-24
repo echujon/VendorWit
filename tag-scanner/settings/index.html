@@ -64,6 +64,15 @@
         <input type="text" id="location-join-code" placeholder="e.g. AB12CD34" style="text-transform:uppercase;">
       </div>
       <button class="btn btn-outline" id="btn-join-location" type="button">Join Location</button>
+
+      <div id="aide-code-display" style="display:none;background:var(--surface,#fff);border:1px solid var(--border,#e8d5c0);border-radius:8px;padding:0.75rem 1rem;margin-top:1rem;align-items:center;gap:0.75rem;">
+        <span style="font-size:0.75rem;color:var(--muted,#8a7060);text-transform:uppercase;letter-spacing:0.05em;">Vendor Aide code - for staff who should scan/sell but not see admin settings</span>
+        <div style="display:flex;align-items:center;gap:0.75rem;margin-top:0.25rem;">
+          <span id="aide-code-value" style="font-size:1.5rem;font-weight:700;letter-spacing:0.1em;font-family:monospace;"></span>
+          <button class="btn btn-outline" id="btn-copy-aide-code" type="button" style="font-size:0.8rem;padding:0.3rem 0.6rem;">Copy</button>
+        </div>
+      </div>
+      <button class="btn btn-outline" id="btn-generate-aide-code" type="button" style="margin-top:0.75rem;">Generate Vendor Aide Code</button>
       <details style="margin-top:1rem;">
         <summary style="cursor:pointer;color:var(--muted,#8a7060);font-size:0.9rem;">Create a new organization instead</summary>
         <div class="settings-field" style="margin-top:0.75rem;">
@@ -188,10 +197,13 @@
     import { getSettings, saveSettings, getLocationCode, setLocationCode, getRole } from '/js/storage.js';
 
     // Vendor Aide login (js/app.js) hides the link to this page, but
-    // that's UI-only - bounce back if someone gets here directly anyway.
-    // Not real auth, same posture as the rest of the app (see
-    // functions/_shared/location.js) - just keeps the gating consistent
-    // regardless of how this page was reached.
+    // someone could still land here directly - bounce back immediately
+    // rather than show a page whose every button would 403 anyway. The
+    // real enforcement is server-side (every admin-only endpoint here
+    // checks loc.role via functions/_shared/location.js); this cached
+    // flag can only make the UI leave early, never grant anything -
+    // even a stale/cleared value just means this check does nothing,
+    // not that access is gained.
     if (getRole() === 'aide') {
       location.replace('/');
     }
@@ -249,6 +261,67 @@
       renderSquareConnectionStatus();
       loadConsignmentSettings();
       loadReviewItems();
+      loadAideCode();
+    });
+
+    // --- Vendor Aide code ---
+    // A second, separate credential (migrations/0013_location_roles.sql)
+    // that logs in via the main app's "Aide Login" instead of this page's
+    // own Location Code - resolveLocation() derives role from which one
+    // matched, enforced on every admin-only endpoint server-side.
+    async function loadAideCode() {
+      if (!getLocationCode()) return;
+      try {
+        const res = await fetch('/api/location/aide-code', { headers: locationHeaders() });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        renderAideCode(data.aideCode);
+      } catch {
+        // Non-fatal - the Generate button still works even if this fails to load.
+      }
+    }
+
+    function renderAideCode(code) {
+      const display = document.getElementById('aide-code-display');
+      const btn = document.getElementById('btn-generate-aide-code');
+      if (code) {
+        document.getElementById('aide-code-value').textContent = code;
+        display.style.display = 'flex';
+        display.style.flexDirection = 'column';
+        btn.textContent = 'Regenerate Vendor Aide Code';
+      } else {
+        display.style.display = 'none';
+        btn.textContent = 'Generate Vendor Aide Code';
+      }
+    }
+
+    document.getElementById('btn-generate-aide-code').addEventListener('click', async () => {
+      if (!getLocationCode()) { alert('Join or create a location above first.'); return; }
+      const existingCode = document.getElementById('aide-code-value').textContent;
+      if (existingCode && !confirm('Generate a new Vendor Aide code? The old one will stop working immediately.')) return;
+      const btn = document.getElementById('btn-generate-aide-code');
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/location/aide-code', { method: 'POST', headers: locationHeaders() });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to generate');
+        renderAideCode(data.aideCode);
+      } catch (err) {
+        alert(err.message);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById('btn-copy-aide-code').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-copy-aide-code');
+      try {
+        await navigator.clipboard.writeText(document.getElementById('aide-code-value').textContent);
+        btn.textContent = 'Copied!';
+        setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+      } catch {
+        alert('Could not copy automatically — the code is shown above, copy it manually.');
+      }
     });
 
     document.getElementById('btn-create-org').addEventListener('click', async () => {
@@ -271,6 +344,7 @@
         renderSquareConnectionStatus();
         loadConsignmentSettings();
         loadReviewItems();
+        loadAideCode();
       } catch (err) {
         alert(err.message);
       } finally {
@@ -527,6 +601,7 @@
 
     loadConsignmentSettings();
     loadReviewItems();
+    loadAideCode();
 
     const settings = getSettings();
     document.getElementById('anthropic-key').value = settings.anthropicKey || '';

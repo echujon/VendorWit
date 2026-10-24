@@ -12,6 +12,7 @@ export async function onRequestPost(context) {
   if (!env.TERMINAL_QUEUE) return new Response(JSON.stringify({ error: 'Server not configured' }), { status: 500 });
   const loc = await resolveLocation(request, env);
   if (loc.error) return new Response(JSON.stringify({ error: loc.error }), { status: loc.status });
+  if (loc.role !== 'admin') return new Response(JSON.stringify({ error: 'Admins only' }), { status: 403 });
   const res = await forwardToQueue(env, request, '/clear-queue', loc.locationId);
   return new Response(res.body, res);
 }

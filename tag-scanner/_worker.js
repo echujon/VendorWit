@@ -28,6 +28,7 @@ import * as queueActiveSalesById from './functions/api/queue/active-sales/[id].j
 import * as queueActiveSalesKeep from './functions/api/queue/active-sales/keep.js';
 import * as debugSquare from './functions/api/debug-square.js';
 import * as orgs from './functions/api/orgs.js';
+import * as locationAideCode from './functions/api/location/aide-code.js';
 import * as items from './functions/api/items.js';
 import * as itemsById from './functions/api/items/[id].js';
 import * as sales from './functions/api/sales.js';
@@ -126,6 +127,10 @@ export default {
 
     if (pathname === '/api/orgs' && method === 'POST') {
       return orgs.onRequestPost(context);
+    }
+    if (pathname === '/api/location/aide-code') {
+      if (method === 'GET') return locationAideCode.onRequestGet(context);
+      if (method === 'POST') return locationAideCode.onRequestPost(context);
     }
     if (pathname === '/api/items') {
       if (method === 'GET') return items.onRequestGet(context);

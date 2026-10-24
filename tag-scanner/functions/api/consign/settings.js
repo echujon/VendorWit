@@ -16,6 +16,7 @@ export async function onRequestGet(context) {
   const { request, env } = context;
   const loc = await resolveLocation(request, env);
   if (loc.error) return json({ error: loc.error }, loc.status);
+  if (loc.role !== 'admin') return json({ error: 'Admins only' }, 403);
 
   const row = await env.DB.prepare(
     'SELECT consignment_slug, consignment_event_name, consignment_terms, consignment_max_items FROM locations WHERE id = ?'
@@ -34,6 +35,7 @@ export async function onRequestPost(context) {
   const { request, env } = context;
   const loc = await resolveLocation(request, env);
   if (loc.error) return json({ error: loc.error }, loc.status);
+  if (loc.role !== 'admin') return json({ error: 'Admins only' }, 403);
 
   const body = await request.json().catch(() => ({}));
   const slug = (body.slug || '').trim().toLowerCase();

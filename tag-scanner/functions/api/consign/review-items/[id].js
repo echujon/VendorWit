@@ -15,6 +15,7 @@ export async function onRequestPatch(context) {
   const { request, env, params } = context;
   const loc = await resolveLocation(request, env);
   if (loc.error) return json({ error: loc.error }, loc.status);
+  if (loc.role !== 'admin') return json({ error: 'Admins only' }, 403);
 
   const body = await request.json().catch(() => ({}));
   if (!ALLOWED_STATUSES.includes(body.status)) {

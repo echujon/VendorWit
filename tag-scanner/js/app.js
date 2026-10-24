@@ -2848,18 +2848,29 @@ if (getLocationCode()) {
       } else {
         localStorage.removeItem(businessNameCacheKey);
       }
+      // Server-verified role (see functions/_shared/location.js) - the
+      // cached value from a previous load decides the Settings link's
+      // visibility instantly on paint, this corrects it once the real
+      // answer comes back, same stale-while-revalidate shape as the
+      // business name above. The server enforces admin-only endpoints
+      // regardless of this - it's just what decides the link's display.
+      if (data?.role) {
+        setRole(data.role);
+        updateSettingsLinkVisibility();
+      }
     })
     .catch(() => {});
 }
 
 // --- Vendor Aide login ---
-// Client-side UI gating only (see storage.js's getRole/setRole) - hides
-// the Settings link for whoever logged in this way, and offers this
-// lighter-weight entry point automatically when no location is bound
-// yet, instead of routing everyone through Settings. Not real auth: the
-// app's whole no-login posture (functions/_shared/location.js) means an
-// aide could still reach /settings directly if they typed the URL - the
-// settings page itself bounces role==='aide' straight back here.
+// Role is actually enforced server-side now (see
+// functions/_shared/location.js and migrations/0013_location_roles.sql
+// - a separate aide_code per location, checked on every admin-gated
+// endpoint). storage.js's getRole/setRole is just a client-side UI hint
+// for whether to show the Settings link - set optimistically here right
+// after this flow (since the user explicitly chose "Aide Login"), then
+// corrected by the server's own answer in the business-name fetch above
+// on every load either way, so a wrong guess here never lingers.
 const aideLoginModal = document.getElementById('aide-login-modal');
 const linkSettings = document.getElementById('link-settings');
 

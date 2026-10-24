@@ -10,6 +10,7 @@ export async function onRequestGet(context) {
   const { request, env } = context;
   const loc = await resolveLocation(request, env);
   if (loc.error) return json({ error: loc.error }, loc.status);
+  if (loc.role !== 'admin') return json({ error: 'Admins only' }, 403);
 
   const status = (new URL(request.url).searchParams.get('status') || '').trim();
   const query = status

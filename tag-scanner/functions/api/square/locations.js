@@ -13,6 +13,7 @@ export async function onRequestGet(context) {
   const { request, env } = context;
   const loc = await resolveLocation(request, env);
   if (loc.error) return json({ error: loc.error }, loc.status);
+  if (loc.role !== 'admin') return json({ error: 'Admins only' }, 403);
 
   const creds = await getSquareCredentials(env, loc.organizationId);
   if (!creds.accessToken) return json({ error: 'Square is not connected for this organization' }, 400);
