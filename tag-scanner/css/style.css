@@ -1,11 +1,11 @@
 :root {
-  --brand: #c97b4b;
-  --brand-dark: #a35e32;
-  --bg: #fff8f0;
+  --brand: #2563eb;
+  --brand-dark: #1d4ed8;
+  --bg: #f1f5f9;
   --surface: #ffffff;
-  --text: #2d2013;
-  --muted: #8a7060;
-  --border: #e8d5c0;
+  --text: #0f172a;
+  --muted: #64748b;
+  --border: #dbe3ec;
   --success: #4caf50;
   --danger: #e53935;
   --radius: 12px;
@@ -180,7 +180,7 @@ main { flex: 1; padding: 1.25rem; padding-bottom: 5rem; display: flex; flex-dire
 .btn-primary:hover:not(:disabled) { background: var(--brand-dark); }
 
 .btn-secondary { background: var(--border); color: var(--text); }
-.btn-secondary:hover:not(:disabled) { background: #dcc9b0; }
+.btn-secondary:hover:not(:disabled) { background: #c3cfdc; }
 
 .btn-success { background: var(--success); color: white; }
 .btn-danger { background: var(--danger); color: white; }
