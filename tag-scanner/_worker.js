@@ -194,9 +194,10 @@ export default {
       if (method === 'POST') return consignItems.onRequestPost(context);
     }
     const consignItemIdMatch = pathname.match(/^\/api\/consign\/items\/([^/]+)$/);
-    if (consignItemIdMatch && method === 'DELETE') {
+    if (consignItemIdMatch) {
       context.params = { id: consignItemIdMatch[1] };
-      return consignItemsById.onRequestDelete(context);
+      if (method === 'PATCH') return consignItemsById.onRequestPatch(context);
+      if (method === 'DELETE') return consignItemsById.onRequestDelete(context);
     }
     if (pathname === '/api/consign/review-items' && method === 'GET') {
       return consignReviewItems.onRequestGet(context);

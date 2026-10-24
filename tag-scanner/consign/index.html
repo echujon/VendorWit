@@ -82,30 +82,36 @@
           <div id="consign-items-list"></div>
         </div>
 
-        <h3 style="margin-top:1.25rem;">Add an Item</h3>
-        <p>Items are reviewed by staff before they're accepted - bring the physical item at drop-off to be tagged.</p>
-        <div class="settings-field">
-          <label for="consign-item-name">Item Name</label>
-          <input type="text" id="consign-item-name" placeholder="e.g. Burton Snowboard">
+        <button class="btn btn-outline" id="btn-consign-show-item-form" type="button" style="margin-top:1.25rem;">Add an Item</button>
+
+        <div id="consign-item-form" style="display:none;margin-top:1rem;">
+          <p>Items are reviewed by staff before they're accepted - bring the physical item at drop-off to be tagged.</p>
+          <div class="settings-field">
+            <label for="consign-item-name">Item Name</label>
+            <input type="text" id="consign-item-name" placeholder="e.g. Burton Snowboard">
+          </div>
+          <div class="settings-field">
+            <label for="consign-item-description">Description (optional)</label>
+            <input type="text" id="consign-item-description" placeholder="e.g. 158cm, used one season">
+          </div>
+          <div class="settings-field">
+            <label for="consign-item-price">Price ($)</label>
+            <input type="text" id="consign-item-price" inputmode="decimal" placeholder="e.g. 150.00">
+          </div>
+          <div class="settings-field">
+            <label for="consign-item-quantity">Quantity</label>
+            <input type="text" id="consign-item-quantity" inputmode="numeric" value="1">
+          </div>
+          <div class="settings-field">
+            <label for="consign-item-photo">Photo (optional)</label>
+            <input type="file" id="consign-item-photo" accept="image/*">
+          </div>
+          <div style="display:flex;gap:0.5rem;">
+            <button class="btn btn-primary" id="btn-consign-save-item" type="button">Add Item</button>
+            <button class="btn btn-secondary" id="btn-consign-cancel-item" type="button">Cancel</button>
+          </div>
+          <div class="consign-status" id="consign-item-status"></div>
         </div>
-        <div class="settings-field">
-          <label for="consign-item-description">Description (optional)</label>
-          <input type="text" id="consign-item-description" placeholder="e.g. 158cm, used one season">
-        </div>
-        <div class="settings-field">
-          <label for="consign-item-price">Price ($)</label>
-          <input type="text" id="consign-item-price" inputmode="decimal" placeholder="e.g. 150.00">
-        </div>
-        <div class="settings-field">
-          <label for="consign-item-quantity">Quantity</label>
-          <input type="text" id="consign-item-quantity" inputmode="numeric" value="1">
-        </div>
-        <div class="settings-field">
-          <label for="consign-item-photo">Photo (optional)</label>
-          <input type="file" id="consign-item-photo" accept="image/*">
-        </div>
-        <button class="btn btn-primary" id="btn-consign-add-item" type="button">Add Item</button>
-        <div class="consign-status" id="consign-item-status"></div>
       </div>
     </div>
   </div>
@@ -156,6 +162,7 @@
     }
 
     let myItemsCache = [];
+    let editingItemId = null;
 
     async function loadMyItems() {
       try {
@@ -164,6 +171,8 @@
         if (!res.ok) throw new Error(data.error);
         myItemsCache = data.items;
         renderMyItems();
+        document.getElementById('btn-consign-show-item-form').textContent =
+          myItemsCache.length ? 'Add another item' : 'Add an Item';
       } catch {
         // Non-fatal - the add-item form still works even if this fails to load.
       }
@@ -183,23 +192,72 @@
             <div class="consign-item-meta">$${escapeHtml(item.price)} &times; ${escapeHtml(item.quantity)}</div>
           </div>
           <span class="consign-item-badge consign-item-badge-${item.status}">${escapeHtml(item.status)}</span>
-          ${item.status === 'pending' ? `<button class="consign-item-remove" data-id="${item.id}" title="Remove">✕</button>` : ''}
+          ${item.status === 'pending' ? `
+            <button class="consign-item-edit" data-id="${item.id}" title="Edit">Edit</button>
+            <button class="consign-item-remove" data-id="${item.id}" title="Remove">✕</button>
+          ` : ''}
         </div>
       `).join('');
     }
 
     document.getElementById('consign-items-list').addEventListener('click', async e => {
-      const btn = e.target.closest('.consign-item-remove');
-      if (!btn) return;
-      try {
-        const res = await fetch(`/api/consign/items/${btn.dataset.id}?slug=${encodeURIComponent(slug)}`, { method: 'DELETE' });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Failed to remove item');
-        await loadMyItems();
-      } catch (err) {
-        alert(err.message);
+      const removeBtn = e.target.closest('.consign-item-remove');
+      const editBtn = e.target.closest('.consign-item-edit');
+
+      if (removeBtn) {
+        try {
+          const res = await fetch(`/api/consign/items/${removeBtn.dataset.id}?slug=${encodeURIComponent(slug)}`, { method: 'DELETE' });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Failed to remove item');
+          await loadMyItems();
+        } catch (err) {
+          alert(err.message);
+        }
+        return;
+      }
+
+      if (editBtn) {
+        const item = myItemsCache.find(i => i.id === editBtn.dataset.id);
+        if (item) startEditingItem(item);
       }
     });
+
+    function showItemForm() {
+      document.getElementById('btn-consign-show-item-form').style.display = 'none';
+      document.getElementById('consign-item-form').style.display = 'block';
+    }
+
+    function hideItemForm() {
+      editingItemId = null;
+      document.getElementById('consign-item-form').style.display = 'none';
+      document.getElementById('btn-consign-show-item-form').style.display = 'block';
+      document.getElementById('consign-item-name').value = '';
+      document.getElementById('consign-item-description').value = '';
+      document.getElementById('consign-item-price').value = '';
+      document.getElementById('consign-item-quantity').value = '1';
+      document.getElementById('consign-item-photo').value = '';
+      document.getElementById('consign-item-status').textContent = '';
+    }
+
+    function startEditingItem(item) {
+      editingItemId = item.id;
+      document.getElementById('consign-item-name').value = item.name;
+      document.getElementById('consign-item-description').value = item.description || '';
+      document.getElementById('consign-item-price').value = item.price;
+      document.getElementById('consign-item-quantity').value = item.quantity;
+      document.getElementById('consign-item-photo').value = '';
+      document.getElementById('consign-item-status').textContent = item.photoDataUrl ? 'Leave photo blank to keep the current one.' : '';
+      document.getElementById('btn-consign-save-item').textContent = 'Save Changes';
+      showItemForm();
+    }
+
+    document.getElementById('btn-consign-show-item-form').addEventListener('click', () => {
+      editingItemId = null;
+      document.getElementById('btn-consign-save-item').textContent = 'Add Item';
+      showItemForm();
+    });
+
+    document.getElementById('btn-consign-cancel-item').addEventListener('click', hideItemForm);
 
     function resizePhotoToDataUrl(file, maxDim = 256, quality = 0.7) {
       return new Promise((resolve, reject) => {
@@ -219,7 +277,7 @@
       });
     }
 
-    document.getElementById('btn-consign-add-item').addEventListener('click', async () => {
+    document.getElementById('btn-consign-save-item').addEventListener('click', async () => {
       const name = document.getElementById('consign-item-name').value.trim();
       const description = document.getElementById('consign-item-description').value.trim();
       const price = document.getElementById('consign-item-price').value.trim();
@@ -230,24 +288,26 @@
         statusEl.textContent = 'Name and price are required.';
         return;
       }
-      const btn = document.getElementById('btn-consign-add-item');
+      const btn = document.getElementById('btn-consign-save-item');
       btn.disabled = true;
       try {
-        let photoDataUrl = null;
-        if (photoFile) photoDataUrl = await resizePhotoToDataUrl(photoFile);
-        const res = await fetch('/api/consign/items', {
-          method: 'POST',
+        // Omitted entirely (not even null) when editing without picking a
+        // new file, so the backend leaves the existing photo untouched -
+        // only a freshly-chosen file overwrites it.
+        const payload = { slug, name, description, price, quantity };
+        if (photoFile) payload.photoDataUrl = await resizePhotoToDataUrl(photoFile);
+        else if (!editingItemId) payload.photoDataUrl = null;
+
+        const url = editingItemId ? `/api/consign/items/${editingItemId}` : '/api/consign/items';
+        const method = editingItemId ? 'PATCH' : 'POST';
+        const res = await fetch(url, {
+          method,
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ slug, name, description, price, quantity, photoDataUrl })
+          body: JSON.stringify(payload)
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Failed to add item');
-        document.getElementById('consign-item-name').value = '';
-        document.getElementById('consign-item-description').value = '';
-        document.getElementById('consign-item-price').value = '';
-        document.getElementById('consign-item-quantity').value = '1';
-        document.getElementById('consign-item-photo').value = '';
-        statusEl.textContent = 'Item added!';
+        if (!res.ok) throw new Error(data.error || 'Failed to save item');
+        hideItemForm();
         await loadMyItems();
       } catch (err) {
         statusEl.textContent = err.message;

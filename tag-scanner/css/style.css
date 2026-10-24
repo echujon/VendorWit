@@ -687,6 +687,18 @@ main { flex: 1; padding: 1.25rem; padding-bottom: 5rem; display: flex; flex-dire
 .consign-item-badge-pending { background: #fdf3e2; color: #a3730a; }
 .consign-item-badge-approved { background: #e5f5e6; color: var(--success); }
 .consign-item-badge-rejected { background: #fdecea; color: var(--danger); }
+.consign-item-edit {
+  background: none;
+  border: 1.5px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  flex-shrink: 0;
+}
+.consign-item-edit:hover { border-color: var(--brand); color: var(--brand); }
 .consign-item-remove {
   background: none;
   border: none;
