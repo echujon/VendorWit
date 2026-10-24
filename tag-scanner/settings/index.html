@@ -185,7 +185,16 @@
   </div>
 
   <script type="module">
-    import { getSettings, saveSettings, getLocationCode, setLocationCode } from '/js/storage.js';
+    import { getSettings, saveSettings, getLocationCode, setLocationCode, getRole } from '/js/storage.js';
+
+    // Vendor Aide login (js/app.js) hides the link to this page, but
+    // that's UI-only - bounce back if someone gets here directly anyway.
+    // Not real auth, same posture as the rest of the app (see
+    // functions/_shared/location.js) - just keeps the gating consistent
+    // regardless of how this page was reached.
+    if (getRole() === 'aide') {
+      location.replace('/');
+    }
 
     function locationHeaders(extra = {}) {
       return { 'X-Location-Code': getLocationCode(), ...extra };

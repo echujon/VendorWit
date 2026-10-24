@@ -21,13 +21,31 @@
         </svg>
         <span id="queue-badge" class="queue-badge hidden"></span>
       </button>
-      <a href="/settings" class="icon-btn" title="Settings">
+      <a href="/settings" class="icon-btn" id="link-settings" title="Settings">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
         </svg>
       </a>
     </div>
   </header>
+
+  <!-- Vendor Aide login - a lighter-weight entry point than Settings for
+       staff who should just scan/sell, not touch admin config. Shown
+       automatically when no location is bound yet; also reachable any
+       time via the link in the empty-location notice below. -->
+  <div id="aide-login-modal" class="modal hidden">
+    <div class="modal-content">
+      <button class="modal-close" id="btn-aide-login-close" title="Close">✕</button>
+      <h2>Vendor Aide Login</h2>
+      <p>Enter the location code you were given to start scanning and selling.</p>
+      <div class="field">
+        <label for="aide-location-code">Location Code</label>
+        <input type="text" id="aide-location-code" placeholder="e.g. AB12CD34" style="text-transform:uppercase;">
+      </div>
+      <button class="btn btn-primary" id="btn-aide-login-submit" type="button">Log In</button>
+      <p style="margin-top:1rem;font-size:0.85rem;color:var(--muted);">Setting up a new location, or need full Settings access? <a href="/settings">Go to Settings</a> instead.</p>
+    </div>
+  </div>
 
   <main>
     <!-- Scanner -->

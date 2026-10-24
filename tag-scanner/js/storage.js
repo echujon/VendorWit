@@ -1,6 +1,7 @@
 const SETTINGS_KEY = 'tag_scanner_settings';
 const CLIENT_ID_KEY = 'tag_scanner_client_id';
 const LOCATION_CODE_KEY = 'tag_scanner_location_code';
+const ROLE_KEY = 'tag_scanner_role';
 
 // Stable per-device id used to route terminal-queue assignments back to
 // whichever app instance requested a checkout.
@@ -23,6 +24,19 @@ export function getLocationCode() {
 
 export function setLocationCode(code) {
   localStorage.setItem(LOCATION_CODE_KEY, (code || '').trim());
+}
+
+// Client-side UI gating only, not real auth - same no-login posture as
+// the rest of the app (see functions/_shared/location.js), just scoped
+// to hiding/showing the Settings link. Defaults to 'admin' (full access)
+// so nothing changes for every existing device that never goes through
+// the Aide Login flow; only that flow ever sets 'aide'.
+export function getRole() {
+  return localStorage.getItem(ROLE_KEY) || 'admin';
+}
+
+export function setRole(role) {
+  localStorage.setItem(ROLE_KEY, role);
 }
 
 function locationHeaders() {

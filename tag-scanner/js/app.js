@@ -1,4 +1,4 @@
-import { getRecords, getCachedRecords, saveRecord, updateRecord, deleteRecord, exportCSV, getSettings, getClientId, getLocationCode, findByUniqueId, findByVisualMatch, createSale, getSales } from './storage.js';
+import { getRecords, getCachedRecords, saveRecord, updateRecord, deleteRecord, exportCSV, getSettings, getClientId, getLocationCode, setLocationCode, getRole, setRole, findByUniqueId, findByVisualMatch, createSale, getSales } from './storage.js';
 import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0/+esm';
 import QRCode from 'https://cdn.jsdelivr.net/npm/qrcode@1.5.4/+esm';
 
@@ -2851,3 +2851,40 @@ if (getLocationCode()) {
     })
     .catch(() => {});
 }
+
+// --- Vendor Aide login ---
+// Client-side UI gating only (see storage.js's getRole/setRole) - hides
+// the Settings link for whoever logged in this way, and offers this
+// lighter-weight entry point automatically when no location is bound
+// yet, instead of routing everyone through Settings. Not real auth: the
+// app's whole no-login posture (functions/_shared/location.js) means an
+// aide could still reach /settings directly if they typed the URL - the
+// settings page itself bounces role==='aide' straight back here.
+const aideLoginModal = document.getElementById('aide-login-modal');
+const linkSettings = document.getElementById('link-settings');
+
+function updateSettingsLinkVisibility() {
+  linkSettings.style.display = getRole() === 'aide' ? 'none' : '';
+}
+updateSettingsLinkVisibility();
+
+function openAideLoginModal() {
+  aideLoginModal.classList.remove('hidden');
+}
+function closeAideLoginModal() {
+  aideLoginModal.classList.add('hidden');
+}
+
+if (!getLocationCode()) {
+  openAideLoginModal();
+}
+
+document.getElementById('btn-aide-login-close').addEventListener('click', closeAideLoginModal);
+
+document.getElementById('btn-aide-login-submit').addEventListener('click', () => {
+  const code = document.getElementById('aide-location-code').value.trim();
+  if (!code) return;
+  setLocationCode(code);
+  setRole('aide');
+  location.reload();
+});
