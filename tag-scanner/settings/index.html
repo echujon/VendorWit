@@ -99,6 +99,7 @@
         <textarea id="consignment-terms" rows="8" placeholder="Paste this event's full consignment agreement text here - shown to consignors before they sign."></textarea>
       </div>
       <button class="btn btn-outline" id="btn-save-consignment" type="button">Save</button>
+      <div class="save-notice" id="consignment-save-notice">✓ Saved</div>
       <div id="consignment-status" style="margin-top:0.5rem;color:var(--muted,#8a7060);font-size:0.85rem;"></div>
       <div id="consignment-share-display" style="display:none;background:var(--bg);border:1px solid var(--border,#e8d5c0);border-radius:8px;padding:0.75rem 1rem;margin-top:0.75rem;">
         <span style="font-size:0.75rem;color:var(--muted,#8a7060);text-transform:uppercase;letter-spacing:0.05em;">Share this link with consignors</span>
@@ -140,6 +141,7 @@
           <p style="font-size:0.8rem;color:var(--muted,#8a7060);margin:0 0 0.4rem;">If your Square account has several Locations (one per event/city), pick which one this is - Terminal checkouts only apply that Location's own tax, not every tax in the account.</p>
           <select id="square-location-select"><option value="">Loading...</option></select>
           <button class="btn btn-outline" id="btn-save-square-location" type="button" style="margin-top:0.5rem;">Save</button>
+          <div class="save-notice" id="square-location-notice">✓ Saved</div>
         </div>
       </div>
     </div>
@@ -187,6 +189,16 @@
 
     function locationHeaders(extra = {}) {
       return { 'X-Location-Code': getLocationCode(), ...extra };
+    }
+
+    // Shared confirmation notice for every "Save" action on this page -
+    // a brief green checkmark next to the button that updated, rather
+    // than a blocking alert() or text that's easy to miss.
+    function showSaveNotice(id, duration = 2000) {
+      const el = document.getElementById(id);
+      el.style.display = 'block';
+      clearTimeout(el._hideTimer);
+      el._hideTimer = setTimeout(() => { el.style.display = 'none'; }, duration);
     }
 
     function renderLocationStatus() {
@@ -319,7 +331,7 @@
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to save');
-        alert('Saved.');
+        showSaveNotice('square-location-notice');
       } catch (err) {
         alert('Error: ' + err.message);
       }
@@ -431,7 +443,8 @@
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to save');
-        statusEl.textContent = 'Saved.';
+        statusEl.textContent = '';
+        showSaveNotice('consignment-save-notice');
         document.getElementById('consignment-share-url').textContent = data.shareUrl;
         document.getElementById('consignment-share-display').style.display = 'block';
       } catch (err) {
@@ -521,9 +534,7 @@
         requireTerminalOnly: document.getElementById('require-terminal-only').checked
       });
       localStorage.setItem('gemini_api_key', document.getElementById('gemini-key').value.trim());
-      const notice = document.getElementById('save-notice');
-      notice.style.display = 'block';
-      setTimeout(() => { notice.style.display = 'none'; }, 2000);
+      showSaveNotice('save-notice');
     });
 
     // Terminal registry lives server-side (in the TerminalQueue Durable
