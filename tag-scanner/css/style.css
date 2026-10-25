@@ -554,6 +554,14 @@ main { flex: 1; padding: 1.25rem; padding-bottom: 5rem; display: flex; flex-dire
 .sales-report-breakdown { font-size: 0.85rem; color: var(--muted); margin-top: 0.15rem; }
 .sales-report-controls { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem; }
 .sales-report-controls select { flex: 1; min-width: 140px; padding: 0.35rem 0.5rem; font-size: 0.85rem; }
+
+.sales-report-category-chart { margin-bottom: 1rem; }
+.category-chart-title { font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-bottom: 0.5rem; }
+.category-bar-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; font-size: 0.82rem; }
+.category-bar-label { width: 110px; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+.category-bar-track { flex: 1; background: var(--border); border-radius: 6px; height: 16px; overflow: hidden; }
+.category-bar-fill { background: var(--brand); height: 100%; border-radius: 6px; transition: width 0.3s ease; }
+.category-bar-value { width: 110px; flex-shrink: 0; text-align: right; color: var(--muted); white-space: nowrap; }
 .sales-report-subheading { font-size: 0.9rem; margin: 0.75rem 0 0.4rem; color: var(--muted); }
 
 /* Tables only ever scroll sideways in their own wrapper, never the page -

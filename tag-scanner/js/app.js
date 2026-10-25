@@ -2126,11 +2126,52 @@ function applySalesReportFiltersAndSort() {
     (!vendor || sale.items.some(item => item.subVendor === vendor))
   );
 
+  renderCategoryChart(visibleSales, allItems);
+
   if (salesReportView === 'item') {
     renderItemPerformance(visibleSales, allItems, vendor);
   } else {
     renderSalesReport(visibleSales);
   }
+}
+
+// Sold items don't carry category on the sale snapshot itself (it's a
+// current-inventory attribute, not fixed at sale time), so this joins
+// back to `items` by id - same join used to answer "what sold the
+// most" by hand before this chart existed. Respects whatever
+// vendor/payment filters are active, same as the two existing tables.
+function renderCategoryChart(sales, items) {
+  const container = document.getElementById('sales-report-category-chart');
+  const categoryById = new Map(items.map(it => [it.id, it.category]));
+  const byCategory = {};
+  for (const sale of sales) {
+    for (const item of sale.items) {
+      const qty = parseInt(item.quantity, 10) || 0;
+      const revenue = (parseFloat(item.price) || 0) * qty;
+      const cat = categoryById.get(item.id) || 'Uncategorized';
+      if (!byCategory[cat]) byCategory[cat] = { qty: 0, revenue: 0 };
+      byCategory[cat].qty += qty;
+      byCategory[cat].revenue += revenue;
+    }
+  }
+
+  const rows = Object.entries(byCategory).sort((a, b) => b[1].qty - a[1].qty);
+  if (!rows.length) {
+    container.innerHTML = '';
+    return;
+  }
+
+  const maxQty = Math.max(...rows.map(([, v]) => v.qty));
+  container.innerHTML = `
+    <div class="category-chart-title">Sold by Category</div>
+    ${rows.map(([cat, { qty, revenue }]) => `
+      <div class="category-bar-row">
+        <div class="category-bar-label">${esc(cat)}</div>
+        <div class="category-bar-track"><div class="category-bar-fill" style="width:${(qty / maxQty * 100).toFixed(1)}%;"></div></div>
+        <div class="category-bar-value">${qty} &middot; $${revenue.toFixed(2)}</div>
+      </div>
+    `).join('')}
+  `;
 }
 
 // Aggregates every sale's items into total quantity sold + revenue per
