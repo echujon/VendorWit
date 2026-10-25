@@ -15,6 +15,7 @@ const COLUMN_BY_FIELD = {
 };
 
 const ALLOWED_STATUSES = ['holding', 'returned', 'sold'];
+const ALLOWED_CATEGORIES = ['Skis', 'Snowboard', 'Boots', 'Bindings', 'Poles', 'Helmet', 'Goggles', 'Jacket', 'Pants/Bibs', 'Gloves', 'Accessories', 'Other'];
 
 export async function onRequestPatch(context) {
   const { request, env, params } = context;
@@ -33,6 +34,10 @@ export async function onRequestPatch(context) {
   if ('status' in body) {
     if (!ALLOWED_STATUSES.includes(body.status)) return json({ error: 'Invalid status' }, 400);
     sets.push('status = ?'); values.push(body.status);
+  }
+  if ('category' in body) {
+    if (body.category && !ALLOWED_CATEGORIES.includes(body.category)) return json({ error: 'Invalid category' }, 400);
+    sets.push('category = ?'); values.push(body.category || null);
   }
   if ('embeddingGemini' in body) { sets.push('embedding_gemini = ?'); values.push(JSON.stringify(body.embeddingGemini)); }
   if ('embeddingClip' in body) { sets.push('embedding_clip = ?'); values.push(JSON.stringify(body.embeddingClip)); }

@@ -95,6 +95,24 @@
             <input type="text" id="consign-item-description" placeholder="e.g. 158cm, used one season">
           </div>
           <div class="settings-field">
+            <label for="consign-item-category">Category</label>
+            <select id="consign-item-category">
+              <option value="">— Select —</option>
+              <option value="Skis">Skis</option>
+              <option value="Snowboard">Snowboard</option>
+              <option value="Boots">Boots</option>
+              <option value="Bindings">Bindings</option>
+              <option value="Poles">Poles</option>
+              <option value="Helmet">Helmet</option>
+              <option value="Goggles">Goggles</option>
+              <option value="Jacket">Jacket</option>
+              <option value="Pants/Bibs">Pants/Bibs</option>
+              <option value="Gloves">Gloves</option>
+              <option value="Accessories">Accessories</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div class="settings-field">
             <label for="consign-item-price">Price ($)</label>
             <input type="text" id="consign-item-price" inputmode="decimal" placeholder="e.g. 150.00">
           </div>
@@ -189,7 +207,7 @@
           ${item.photoDataUrl ? `<img src="${item.photoDataUrl}" class="consign-item-photo" alt="">` : ''}
           <div class="consign-item-info">
             <div class="consign-item-name">${escapeHtml(item.name)}</div>
-            <div class="consign-item-meta">$${escapeHtml(item.price)} &times; ${escapeHtml(item.quantity)}</div>
+            <div class="consign-item-meta">${item.category ? escapeHtml(item.category) + ' · ' : ''}$${escapeHtml(item.price)} &times; ${escapeHtml(item.quantity)}</div>
           </div>
           <span class="consign-item-badge consign-item-badge-${item.status}">${escapeHtml(item.status)}</span>
           ${item.status === 'pending' ? `
@@ -233,6 +251,7 @@
       document.getElementById('btn-consign-show-item-form').style.display = 'block';
       document.getElementById('consign-item-name').value = '';
       document.getElementById('consign-item-description').value = '';
+      document.getElementById('consign-item-category').value = '';
       document.getElementById('consign-item-price').value = '';
       document.getElementById('consign-item-quantity').value = '1';
       document.getElementById('consign-item-photo').value = '';
@@ -243,6 +262,7 @@
       editingItemId = item.id;
       document.getElementById('consign-item-name').value = item.name;
       document.getElementById('consign-item-description').value = item.description || '';
+      document.getElementById('consign-item-category').value = item.category || '';
       document.getElementById('consign-item-price').value = item.price;
       document.getElementById('consign-item-quantity').value = item.quantity;
       document.getElementById('consign-item-photo').value = '';
@@ -280,12 +300,13 @@
     document.getElementById('btn-consign-save-item').addEventListener('click', async () => {
       const name = document.getElementById('consign-item-name').value.trim();
       const description = document.getElementById('consign-item-description').value.trim();
+      const category = document.getElementById('consign-item-category').value;
       const price = document.getElementById('consign-item-price').value.trim();
       const quantity = document.getElementById('consign-item-quantity').value.trim() || '1';
       const photoFile = document.getElementById('consign-item-photo').files[0];
       const statusEl = document.getElementById('consign-item-status');
-      if (!name || !price) {
-        statusEl.textContent = 'Name and price are required.';
+      if (!name || !price || !category) {
+        statusEl.textContent = 'Name, category, and price are required.';
         return;
       }
       const btn = document.getElementById('btn-consign-save-item');
@@ -294,7 +315,7 @@
         // Omitted entirely (not even null) when editing without picking a
         // new file, so the backend leaves the existing photo untouched -
         // only a freshly-chosen file overwrites it.
-        const payload = { slug, name, description, price, quantity };
+        const payload = { slug, name, description, category, price, quantity };
         if (photoFile) payload.photoDataUrl = await resizePhotoToDataUrl(photoFile);
         else if (!editingItemId) payload.photoDataUrl = null;
 

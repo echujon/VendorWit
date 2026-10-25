@@ -572,7 +572,7 @@
           ${item.photoDataUrl ? `<img src="${item.photoDataUrl}" class="consign-item-photo" alt="">` : ''}
           <div class="consign-item-info">
             <div class="consign-item-name">${escapeHtml(item.name)}</div>
-            <div class="consign-item-meta">$${escapeHtml(item.price)} &times; ${escapeHtml(item.quantity)} - ${escapeHtml(item.consignorEmail)}</div>
+            <div class="consign-item-meta">${item.category ? escapeHtml(item.category) + ' · ' : ''}$${escapeHtml(item.price)} &times; ${escapeHtml(item.quantity)} - ${escapeHtml(item.consignorEmail)}</div>
           </div>
           <button class="btn btn-outline" data-action="approved" data-id="${item.id}" type="button" style="font-size:0.8rem;padding:0.3rem 0.6rem;flex-shrink:0;">Approve</button>
           <button class="btn btn-secondary" data-action="rejected" data-id="${item.id}" type="button" style="font-size:0.8rem;padding:0.3rem 0.6rem;flex-shrink:0;">Reject</button>

@@ -21,6 +21,7 @@ export function rowToRecord(row) {
     embeddingClip: row.embedding_clip ? JSON.parse(row.embedding_clip) : null,
     otherFields: row.other_fields_json ? JSON.parse(row.other_fields_json) : {},
     status: row.status || 'holding',
+    category: row.category || '',
     createdAt: row.created_at
   };
 }

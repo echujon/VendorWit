@@ -1,7 +1,7 @@
 // Routed manually (see _worker.js): /api/consign/items
 // GET  ?slug= - list the current session's own submitted items (any
 //               status), for the consign page to show what's pending
-// POST { slug, name, description, price, quantity, photoDataUrl } -
+// POST { slug, name, description, category, price, quantity, photoDataUrl } -
 //      submit a new item for review (status starts 'pending' - see
 //      migrations/0012_consignment_items.sql for why these aren't live
 //      inventory yet)
@@ -9,6 +9,8 @@
 // review endpoints (see review-items.js).
 
 import { resolveConsignorSession } from '../../_shared/consignorSession.js';
+
+const ALLOWED_CATEGORIES = ['Skis', 'Snowboard', 'Boots', 'Bindings', 'Poles', 'Helmet', 'Goggles', 'Jacket', 'Pants/Bibs', 'Gloves', 'Accessories', 'Other'];
 
 export async function onRequestGet(context) {
   const { request, env } = context;
@@ -21,7 +23,7 @@ export async function onRequestGet(context) {
   if (!session.authenticated) return json({ error: 'Not authenticated' }, 401);
 
   const { results } = await env.DB.prepare(
-    'SELECT id, name, description, price, quantity, photo_data_url, status, created_at FROM consignor_items WHERE consignor_id = ? ORDER BY created_at DESC'
+    'SELECT id, name, description, category, price, quantity, photo_data_url, status, created_at FROM consignor_items WHERE consignor_id = ? ORDER BY created_at DESC'
   ).bind(session.consignor.id).all();
 
   return json({ items: results.map(rowToItem) });
@@ -43,10 +45,12 @@ export async function onRequestPost(context) {
 
   const name = (body.name || '').trim();
   const description = (body.description || '').trim();
+  const category = (body.category || '').trim();
   const price = (body.price || '').trim();
   const quantity = (body.quantity || '1').trim();
   const photoDataUrl = body.photoDataUrl || null;
-  if (!name || !price) return json({ error: 'Name and price are required' }, 400);
+  if (!name || !price || !category) return json({ error: 'Name, category, and price are required' }, 400);
+  if (!ALLOWED_CATEGORIES.includes(category)) return json({ error: 'Invalid category' }, 400);
 
   const location = await env.DB.prepare(
     'SELECT consignment_max_items FROM locations WHERE id = ?'
@@ -63,12 +67,12 @@ export async function onRequestPost(context) {
 
   const id = crypto.randomUUID();
   await env.DB.prepare(`
-    INSERT INTO consignor_items (id, consignor_id, location_id, name, description, price, quantity, photo_data_url)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).bind(id, session.consignor.id, session.location.id, name, description || null, price, quantity, photoDataUrl).run();
+    INSERT INTO consignor_items (id, consignor_id, location_id, name, description, category, price, quantity, photo_data_url)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(id, session.consignor.id, session.location.id, name, description || null, category, price, quantity, photoDataUrl).run();
 
   const row = await env.DB.prepare(
-    'SELECT id, name, description, price, quantity, photo_data_url, status, created_at FROM consignor_items WHERE id = ?'
+    'SELECT id, name, description, category, price, quantity, photo_data_url, status, created_at FROM consignor_items WHERE id = ?'
   ).bind(id).first();
 
   return json(rowToItem(row));
@@ -79,6 +83,7 @@ function rowToItem(row) {
     id: row.id,
     name: row.name,
     description: row.description || '',
+    category: row.category || '',
     price: row.price,
     quantity: row.quantity,
     photoDataUrl: row.photo_data_url || null,

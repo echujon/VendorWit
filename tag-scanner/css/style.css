@@ -281,7 +281,7 @@ main { flex: 1; padding: 1.25rem; padding-bottom: 5rem; display: flex; flex-dire
   margin-bottom: 0.35rem;
 }
 
-.field input {
+.field input, .field select {
   width: 100%;
   padding: 0.75rem;
   border: 1.5px solid var(--border);
@@ -291,7 +291,7 @@ main { flex: 1; padding: 1.25rem; padding-bottom: 5rem; display: flex; flex-dire
   background: var(--bg);
   transition: border-color 0.15s;
 }
-.field input:focus {
+.field input:focus, .field select:focus {
   outline: none;
   border-color: var(--brand);
 }
@@ -637,6 +637,16 @@ main { flex: 1; padding: 1.25rem; padding-bottom: 5rem; display: flex; flex-dire
   min-height: 100px;
 }
 .settings-field textarea:focus { outline: none; border-color: var(--brand); }
+.settings-field select {
+  padding: 0.75rem;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--bg);
+}
+.settings-field select:focus { outline: none; border-color: var(--brand); }
 
 .consign-status { font-size: 0.85rem; color: var(--danger); margin-top: 0.5rem; min-height: 1.2em; }
 .consign-terms-box {

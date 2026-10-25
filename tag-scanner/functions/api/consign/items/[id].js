@@ -11,6 +11,8 @@
 
 import { resolveConsignorSession } from '../../../_shared/consignorSession.js';
 
+const ALLOWED_CATEGORIES = ['Skis', 'Snowboard', 'Boots', 'Bindings', 'Poles', 'Helmet', 'Goggles', 'Jacket', 'Pants/Bibs', 'Gloves', 'Accessories', 'Other'];
+
 export async function onRequestPatch(context) {
   const { request, env, params } = context;
   if (!env.DB) return json({ error: 'Server not configured (DB)' }, 500);
@@ -30,12 +32,14 @@ export async function onRequestPatch(context) {
 
   const name = (body.name || '').trim();
   const description = (body.description || '').trim();
+  const category = (body.category || '').trim();
   const price = (body.price || '').trim();
   const quantity = (body.quantity || '1').trim();
-  if (!name || !price) return json({ error: 'Name and price are required' }, 400);
+  if (!name || !price || !category) return json({ error: 'Name, category, and price are required' }, 400);
+  if (!ALLOWED_CATEGORIES.includes(category)) return json({ error: 'Invalid category' }, 400);
 
-  const sets = ['name = ?', 'description = ?', 'price = ?', 'quantity = ?'];
-  const values = [name, description || null, price, quantity];
+  const sets = ['name = ?', 'description = ?', 'category = ?', 'price = ?', 'quantity = ?'];
+  const values = [name, description || null, category, price, quantity];
   if ('photoDataUrl' in body) {
     sets.push('photo_data_url = ?');
     values.push(body.photoDataUrl || null);
@@ -45,7 +49,7 @@ export async function onRequestPatch(context) {
   await env.DB.prepare(`UPDATE consignor_items SET ${sets.join(', ')} WHERE id = ?`).bind(...values).run();
 
   const row = await env.DB.prepare(
-    'SELECT id, name, description, price, quantity, photo_data_url, status, created_at FROM consignor_items WHERE id = ?'
+    'SELECT id, name, description, category, price, quantity, photo_data_url, status, created_at FROM consignor_items WHERE id = ?'
   ).bind(params.id).first();
 
   return json(rowToItem(row));
@@ -76,6 +80,7 @@ function rowToItem(row) {
     id: row.id,
     name: row.name,
     description: row.description || '',
+    category: row.category || '',
     price: row.price,
     quantity: row.quantity,
     photoDataUrl: row.photo_data_url || null,

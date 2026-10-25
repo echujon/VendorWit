@@ -25,6 +25,7 @@ const fieldBrand = document.getElementById('field-brand');
 const fieldSize = document.getElementById('field-size');
 const fieldColor = document.getElementById('field-color');
 const fieldTagColor = document.getElementById('field-tag-color');
+const fieldCategory = document.getElementById('field-category');
 const fieldSubVendor = document.getElementById('field-sub-vendor');
 const fieldPrice = document.getElementById('field-price');
 const fieldQuantity = document.getElementById('field-quantity');
@@ -560,6 +561,7 @@ function showMatchCard(record, matchType = 'text', score = null) {
   document.getElementById('match-size').textContent = record.size || '—';
   document.getElementById('match-color').textContent = record.color || '—';
   document.getElementById('match-tagColor').textContent = record.tagColor || '—';
+  document.getElementById('match-category').textContent = record.category || '—';
   document.getElementById('match-subVendor').textContent = record.subVendor || '—';
   document.getElementById('match-status').textContent = statusLabel(record.status);
   document.getElementById('match-price').textContent = record.price ? `$${record.price}` : '—';
@@ -878,6 +880,7 @@ function showNewItemForm(rawText, prefill = {}) {
   fieldSize.value = parsed.size || prefill.size || '';
   fieldColor.value = parsed.color || prefill.color || '';
   fieldTagColor.value = prefill.tagColor || '';
+  fieldCategory.value = prefill.category || '';
   fieldSubVendor.value = prefill.subVendor || '';
   fieldPrice.value = parsed.price || prefill.price || '';
   fieldQuantity.value = parsed.quantity || prefill.quantity || '';
@@ -1410,6 +1413,7 @@ function collectFormData() {
     size: fieldSize.value.trim(),
     color: fieldColor.value.trim(),
     tagColor: fieldTagColor.value.trim(),
+    category: fieldCategory.value,
     subVendor: fieldSubVendor.value.trim(),
     price: fieldPrice.value.trim(),
     quantity: fieldQuantity.value.trim(),

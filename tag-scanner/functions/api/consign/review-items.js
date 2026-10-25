@@ -15,7 +15,7 @@ export async function onRequestGet(context) {
   const status = (new URL(request.url).searchParams.get('status') || '').trim();
   const query = status
     ? env.DB.prepare(`
-        SELECT ci.id, ci.name, ci.description, ci.price, ci.quantity, ci.photo_data_url,
+        SELECT ci.id, ci.name, ci.description, ci.category, ci.price, ci.quantity, ci.photo_data_url,
                ci.status, ci.created_at, c.email AS consignor_email
         FROM consignor_items ci
         JOIN consignors c ON c.id = ci.consignor_id
@@ -23,7 +23,7 @@ export async function onRequestGet(context) {
         ORDER BY ci.created_at DESC
       `).bind(loc.locationId, status)
     : env.DB.prepare(`
-        SELECT ci.id, ci.name, ci.description, ci.price, ci.quantity, ci.photo_data_url,
+        SELECT ci.id, ci.name, ci.description, ci.category, ci.price, ci.quantity, ci.photo_data_url,
                ci.status, ci.created_at, c.email AS consignor_email
         FROM consignor_items ci
         JOIN consignors c ON c.id = ci.consignor_id
@@ -37,6 +37,7 @@ export async function onRequestGet(context) {
       id: row.id,
       name: row.name,
       description: row.description || '',
+      category: row.category || '',
       price: row.price,
       quantity: row.quantity,
       photoDataUrl: row.photo_data_url || null,
