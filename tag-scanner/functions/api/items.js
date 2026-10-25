@@ -11,7 +11,7 @@ import { resolveLocation } from '../_shared/location.js';
 import { rowToRecord } from '../_shared/items.js';
 
 const ALLOWED_STATUSES = ['holding', 'returned', 'sold'];
-const ALLOWED_CATEGORIES = ['Skis', 'Snowboard', 'Boots', 'Bindings', 'Poles', 'Helmet', 'Goggles', 'Jacket', 'Pants/Bibs', 'Gloves', 'Accessories', 'Other'];
+const ALLOWED_CATEGORIES = ['Skis', 'Snowboard', 'Boots', 'Ski Bindings', 'Snowboard Bindings', 'Poles', 'Helmet', 'Goggles', 'Jacket', 'Pants/Bibs', 'Gloves', 'Accessories', 'Other'];
 
 export async function onRequestGet(context) {
   const { request, env } = context;

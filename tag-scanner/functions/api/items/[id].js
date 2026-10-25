@@ -15,7 +15,7 @@ const COLUMN_BY_FIELD = {
 };
 
 const ALLOWED_STATUSES = ['holding', 'returned', 'sold'];
-const ALLOWED_CATEGORIES = ['Skis', 'Snowboard', 'Boots', 'Bindings', 'Poles', 'Helmet', 'Goggles', 'Jacket', 'Pants/Bibs', 'Gloves', 'Accessories', 'Other'];
+const ALLOWED_CATEGORIES = ['Skis', 'Snowboard', 'Boots', 'Ski Bindings', 'Snowboard Bindings', 'Poles', 'Helmet', 'Goggles', 'Jacket', 'Pants/Bibs', 'Gloves', 'Accessories', 'Other'];
 
 export async function onRequestPatch(context) {
   const { request, env, params } = context;
