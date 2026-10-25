@@ -235,7 +235,7 @@
         Records
         <span style="display:flex;gap:0.5rem;">
           <button class="btn btn-outline" id="btn-seed-test" style="display:none;font-size:0.8rem;padding:0.35rem 0.75rem;">Seed Test Data</button>
-          <button class="btn btn-outline" id="btn-sales-report" style="font-size:0.8rem;padding:0.35rem 0.75rem;">Sales Report</button>
+          <a class="btn btn-outline" href="/sales-report" style="font-size:0.8rem;padding:0.35rem 0.75rem;text-decoration:none;display:inline-flex;align-items:center;">Sales Report</a>
           <button class="btn btn-outline" id="btn-export" style="font-size:0.8rem;padding:0.35rem 0.75rem;">Export CSV</button>
         </span>
       </h2>
@@ -303,34 +303,6 @@
     </div>
   </div>
 
-  <!-- Sales Report: every completed sale at this location, with totals by
-       payment method and a CSV export - see functions/api/sales.js. -->
-  <div id="sales-report-modal" class="modal hidden">
-    <div class="modal-content modal-content-tall">
-      <button class="modal-close" id="btn-sales-report-modal-close" title="Close">✕</button>
-      <h2>Sales Report</h2>
-      <div class="scan-mode-toggle" role="group" aria-label="Report view" style="margin-bottom:0.75rem;">
-        <button type="button" class="scan-mode-btn active" id="btn-sales-report-view-sale" data-view="sale">By Sale</button>
-        <button type="button" class="scan-mode-btn" id="btn-sales-report-view-item" data-view="item">By Item (Sold/Unsold)</button>
-      </div>
-      <div id="sales-report-summary" class="sales-report-summary"></div>
-      <div id="sales-report-category-chart" class="sales-report-category-chart"></div>
-      <div class="sales-report-controls">
-        <select id="sales-report-filter-vendor">
-          <option value="">All sub-vendors</option>
-        </select>
-        <select id="sales-report-filter-method">
-          <option value="">All payment methods</option>
-          <option value="cash">Cash</option>
-          <option value="venmo">Venmo</option>
-          <option value="card">Card (Terminal)</option>
-          <option value="other">Other / Quick Sale</option>
-        </select>
-      </div>
-      <button class="btn btn-outline" id="btn-sales-report-export" style="font-size:0.8rem;padding:0.35rem 0.75rem;margin-bottom:0.75rem;">Export CSV</button>
-      <div id="sales-report-list"></div>
-    </div>
-  </div>
 
   <div id="toast"></div>
 
