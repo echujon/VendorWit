@@ -33,8 +33,8 @@ SQUARE_OAUTH_CLIENT_ID = "sq0idp-bmDUDiEKmuvccx_2bohJcQ"
 # README.md's "Consignment registration" section).
 # EMAIL_PROVIDER = "resend"
 # RESEND_FROM_EMAIL = "registration@yourdomain.com"
-# EMAIL_PROVIDER = "smtp2go"
-# SMTP2GO_FROM_EMAIL = "registration@yourdomain.com"
+EMAIL_PROVIDER = "smtp2go"
+SMTP2GO_FROM_EMAIL = "registration@vendorwit.com"
 
 # TerminalQueue coordinates a shared pool of Square Terminals across
 # multiple simultaneous app instances. A Pages project can't self-host a
