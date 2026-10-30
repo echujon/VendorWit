@@ -7,6 +7,7 @@
 // nothing to learn by guessing.
 
 import { randomSessionToken, sessionCookieHeader } from '../../_shared/consignorSession.js';
+import { resolveConsignForm } from '../../_shared/consignForm.js';
 
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_ATTEMPTS = 5;
@@ -21,10 +22,9 @@ export async function onRequestPost(context) {
   const code = (body.code || '').trim();
   if (!slug || !email || !code) return json({ error: 'slug, email, and code are required' }, 400);
 
-  const location = await env.DB.prepare(
-    'SELECT id, name, consignment_event_name, consignment_terms FROM locations WHERE consignment_slug = ?'
-  ).bind(slug).first();
-  if (!location) return json({ error: 'Unknown registration link' }, 404);
+  const form = await resolveConsignForm(env, slug, null);
+  if (form.error) return json({ error: form.error }, form.status);
+  const location = form.location;
 
   const consignor = await env.DB.prepare(
     'SELECT id, phone, address, signed_name, signed_at FROM consignors WHERE location_id = ? AND email = ?'
@@ -54,8 +54,8 @@ export async function onRequestPost(context) {
   `).bind(sessionToken, consignor.id, Date.now() + SESSION_TTL_MS).run();
 
   return new Response(JSON.stringify({
-    locationName: location.consignment_event_name || location.name,
-    terms: location.consignment_terms || '',
+    locationName: location.name,
+    terms: location.terms,
     consignor: {
       email,
       phone: consignor.phone || '',

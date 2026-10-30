@@ -4,6 +4,8 @@
 // high-entropy random values looked up directly in D1, same trust model
 // as join_code, just scoped to one consignor instead of a whole location.
 
+import { resolveConsignForm, accessKeyFromRequest } from './consignForm.js';
+
 const SESSION_COOKIE_NAME = 'consignor_session';
 
 function toBase64Url(bytes) {
@@ -47,6 +49,10 @@ function getCookie(request, name) {
 // registering for two different events in the same browser can't
 // cross-contaminate sessions (same cookie name/path covers both).
 export async function resolveConsignorSession(request, env, slug) {
+  const form = await resolveConsignForm(env, slug, accessKeyFromRequest(request));
+  if (form.closed) return { authenticated: false, closed: true };
+  if (form.error) return { authenticated: false };
+
   const token = getCookie(request, SESSION_COOKIE_NAME);
   if (!token) return { authenticated: false };
 

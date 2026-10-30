@@ -8,6 +8,7 @@
 // UI from advancing to the code-entry screen (the user can hit "resend").
 
 import { randomCode } from '../../_shared/consignorSession.js';
+import { resolveConsignForm } from '../../_shared/consignForm.js';
 import { sendEmail } from '../../_shared/email.js';
 
 const CODE_TTL_MS = 5 * 60 * 1000;
@@ -22,10 +23,9 @@ export async function onRequestPost(context) {
   const email = (body.email || '').trim().toLowerCase();
   if (!slug || !email) return json({ error: 'slug and email are required' }, 400);
 
-  const location = await env.DB.prepare(
-    'SELECT id FROM locations WHERE consignment_slug = ?'
-  ).bind(slug).first();
-  if (!location) return json({ error: 'Unknown registration link' }, 404);
+  const form = await resolveConsignForm(env, slug, null);
+  if (form.error) return json({ error: form.error }, form.status);
+  const location = form.location;
 
   const consignorId = crypto.randomUUID();
   await env.DB.prepare(`

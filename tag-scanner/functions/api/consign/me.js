@@ -13,6 +13,7 @@ export async function onRequestGet(context) {
   if (!slug) return json({ error: 'slug is required' }, 400);
 
   const session = await resolveConsignorSession(request, env, slug);
+  if (session.closed) return json({ error: 'This page is no longer available' }, 410);
   if (!session.authenticated) return json({ authenticated: false });
 
   return json({

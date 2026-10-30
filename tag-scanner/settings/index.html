@@ -50,7 +50,7 @@
 
     <div class="settings-section">
       <h2>Location</h2>
-      <p>Binds this device to a shared location — everyone bound to the same location sees the same inventory and Square Terminal pool. Create a new organization/location once, or join an existing one with its code.</p>
+      <p>Binds this device to a shared location — everyone bound to the same location sees the same inventory and Square Terminal pool. Join a location with the code you were given.</p>
       <div id="location-status" style="font-weight:600;margin-bottom:0.75rem;"></div>
       <div id="location-code-display" style="display:none;background:var(--surface,#fff);border:1px solid var(--border,#e8d5c0);border-radius:8px;padding:0.75rem 1rem;margin-bottom:1rem;align-items:center;gap:0.75rem;">
         <span style="font-size:0.75rem;color:var(--muted,#8a7060);text-transform:uppercase;letter-spacing:0.05em;">Share this code with staff to join this location</span>
@@ -73,23 +73,11 @@
         </div>
       </div>
       <button class="btn btn-outline" id="btn-generate-aide-code" type="button" style="margin-top:0.75rem;">Generate Vendor Aide Code</button>
-      <details style="margin-top:1rem;">
-        <summary style="cursor:pointer;color:var(--muted,#8a7060);font-size:0.9rem;">Create a new organization instead</summary>
-        <div class="settings-field" style="margin-top:0.75rem;">
-          <label for="new-org-name">Organization Name</label>
-          <input type="text" id="new-org-name" placeholder="e.g. Ariel's Doodles">
-        </div>
-        <div class="settings-field">
-          <label for="new-org-location-name">Location Name</label>
-          <input type="text" id="new-org-location-name" placeholder="e.g. Main Booth">
-        </div>
-        <button class="btn btn-outline" id="btn-create-org" type="button">Create Organization</button>
-      </details>
     </div>
 
     <div class="settings-section">
       <h2>Consignment</h2>
-      <p>Lets consignors register themselves for this event at a public link: confirm the event, verify their email with a one-time code, then fill in contact info and sign the consignment agreement below. Requires a location to be joined/created above first.</p>
+      <p>Lets consignors register themselves for this event: online (verifying their email with a one-time code first) or in person at the booth (no code). Either way they fill in contact info and sign the consignment agreement below. Each link only stays open for the number of days you choose. Requires a location to be joined/created above first.</p>
       <div class="settings-field">
         <label for="consignment-slug">Shareable Link Name</label>
         <input type="text" id="consignment-slug" placeholder="e.g. fort-collins-2026" style="text-transform:lowercase;">
@@ -110,11 +98,37 @@
       <button class="btn btn-outline" id="btn-save-consignment" type="button">Save</button>
       <div class="save-notice" id="consignment-save-notice">✓ Saved</div>
       <div id="consignment-status" style="margin-top:0.5rem;color:var(--muted,#8a7060);font-size:0.85rem;"></div>
-      <div id="consignment-share-display" style="display:none;background:var(--bg);border:1px solid var(--border,#e8d5c0);border-radius:8px;padding:0.75rem 1rem;margin-top:0.75rem;">
-        <span style="font-size:0.75rem;color:var(--muted,#8a7060);text-transform:uppercase;letter-spacing:0.05em;">Share this link with consignors</span>
-        <div style="display:flex;align-items:center;gap:0.75rem;margin-top:0.25rem;">
-          <span id="consignment-share-url" style="font-size:0.9rem;font-weight:600;word-break:break-all;"></span>
-          <button class="btn btn-outline" id="btn-copy-consignment-url" type="button" style="font-size:0.8rem;padding:0.3rem 0.6rem;flex-shrink:0;">Copy</button>
+      <div id="consignment-share-display" style="display:none;margin-top:0.75rem;">
+        <div class="settings-field">
+          <label for="consignment-open-days">Open for (days)</label>
+          <input type="number" id="consignment-open-days" min="0.5" max="60" step="0.5" value="2">
+          <p style="font-size:0.78rem;color:var(--muted,#8a7060);margin:0;">Each link closes this many days after you press its Open button. Pressing Open again restarts the clock. After it closes, visitors see a "no longer available" page.</p>
+        </div>
+        <div class="consign-window-card" style="background:var(--bg);border:1px solid var(--border,#e8d5c0);border-radius:8px;padding:0.75rem 1rem;margin-top:0.75rem;">
+          <span style="font-size:0.75rem;color:var(--muted,#8a7060);text-transform:uppercase;letter-spacing:0.05em;">Online link</span>
+          <p style="font-size:0.78rem;color:var(--muted,#8a7060);margin:0.25rem 0;">Consignors verify their email with a one-time code. Share it ahead of the event.</p>
+          <div id="consign-window-status-online" style="font-weight:600;font-size:0.85rem;margin:0.25rem 0;"></div>
+          <div id="consign-window-link-online" style="display:none;align-items:center;gap:0.75rem;margin-top:0.25rem;">
+            <span id="consign-window-url-online" style="font-size:0.9rem;font-weight:600;word-break:break-all;"></span>
+            <button class="btn btn-outline consign-copy-url" data-form="online" type="button" style="font-size:0.8rem;padding:0.3rem 0.6rem;flex-shrink:0;">Copy</button>
+          </div>
+          <div style="display:flex;gap:0.5rem;margin-top:0.5rem;">
+            <button class="btn btn-primary consign-window-open" data-form="online" type="button" style="font-size:0.85rem;">Open</button>
+            <button class="btn btn-outline consign-window-close" data-form="online" type="button" style="font-size:0.85rem;">Close now</button>
+          </div>
+        </div>
+        <div class="consign-window-card" style="background:var(--bg);border:1px solid var(--border,#e8d5c0);border-radius:8px;padding:0.75rem 1rem;margin-top:0.75rem;">
+          <span style="font-size:0.75rem;color:var(--muted,#8a7060);text-transform:uppercase;letter-spacing:0.05em;">In-person link</span>
+          <p style="font-size:0.78rem;color:var(--muted,#8a7060);margin:0.25rem 0;">No email code - for people registering at the booth. Show it as a QR code at the table rather than posting it publicly.</p>
+          <div id="consign-window-status-inperson" style="font-weight:600;font-size:0.85rem;margin:0.25rem 0;"></div>
+          <div id="consign-window-link-inperson" style="display:none;align-items:center;gap:0.75rem;margin-top:0.25rem;">
+            <span id="consign-window-url-inperson" style="font-size:0.9rem;font-weight:600;word-break:break-all;"></span>
+            <button class="btn btn-outline consign-copy-url" data-form="inperson" type="button" style="font-size:0.8rem;padding:0.3rem 0.6rem;flex-shrink:0;">Copy</button>
+          </div>
+          <div style="display:flex;gap:0.5rem;margin-top:0.5rem;">
+            <button class="btn btn-primary consign-window-open" data-form="inperson" type="button" style="font-size:0.85rem;">Open</button>
+            <button class="btn btn-outline consign-window-close" data-form="inperson" type="button" style="font-size:0.85rem;">Close now</button>
+          </div>
         </div>
       </div>
 
@@ -180,6 +194,13 @@
       </div>
     </div>
 
+    <!-- Label Printer (width/height, connect/disconnect) moved to the main
+         scan page itself - a popover off the header's printer icon, not a
+         separate page - since navigating here from there drops the
+         Bluetooth connection (every browser tears down Web Bluetooth's GATT
+         connection on a full page navigation, not fixable from script).
+         See js/app.js's printer-modal wiring. -->
+
     <div class="settings-section">
       <h2>Venmo</h2>
       <p>Generates a QR code with the item's price pre-filled, for the customer to scan and pay with their own phone.</p>
@@ -228,7 +249,7 @@
       const codeValue = document.getElementById('location-code-value');
       const code = getLocationCode();
 
-      status.textContent = code ? 'Bound to a location.' : 'Not bound to a location yet — join one or create an organization below.';
+      status.textContent = code ? 'Bound to a location.' : 'Not bound to a location yet — enter your location code below.';
       document.getElementById('location-join-code').value = code;
 
       if (code) {
@@ -321,34 +342,6 @@
         setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
       } catch {
         alert('Could not copy automatically — the code is shown above, copy it manually.');
-      }
-    });
-
-    document.getElementById('btn-create-org').addEventListener('click', async () => {
-      const organizationName = document.getElementById('new-org-name').value.trim();
-      const locationName = document.getElementById('new-org-location-name').value.trim();
-      if (!organizationName || !locationName) return;
-      const btn = document.getElementById('btn-create-org');
-      btn.disabled = true;
-      try {
-        const res = await fetch('/api/orgs', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ organizationName, locationName })
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Failed to create organization');
-        setLocationCode(data.joinCode);
-        renderLocationStatus();
-        loadTerminals();
-        renderSquareConnectionStatus();
-        loadConsignmentSettings();
-        loadReviewItems();
-        loadAideCode();
-      } catch (err) {
-        alert(err.message);
-      } finally {
-        btn.disabled = false;
       }
     });
 
@@ -499,16 +492,65 @@
         document.getElementById('consignment-max-items').value = data.maxItems || '';
         document.getElementById('consignment-terms').value = data.terms || '';
         statusEl.textContent = '';
-        if (data.shareUrl) {
-          document.getElementById('consignment-share-url').textContent = data.shareUrl;
-          shareDisplay.style.display = 'block';
-        } else {
-          shareDisplay.style.display = 'none';
-        }
+        renderConsignWindows(data);
       } catch (err) {
         statusEl.textContent = err.message;
       }
     }
+
+    function renderConsignWindows(data) {
+      document.getElementById('consignment-share-display').style.display = data.shareUrl ? 'block' : 'none';
+      if (!data.shareUrl) return;
+      const forms = {
+        online: { url: data.shareUrl, expiresAt: data.onlineExpiresAt },
+        inperson: { url: data.inPersonUrl, expiresAt: data.inPersonExpiresAt }
+      };
+      for (const [form, { url, expiresAt }] of Object.entries(forms)) {
+        const open = expiresAt && expiresAt > Date.now();
+        const when = expiresAt ? new Date(expiresAt).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+        const statusEl = document.getElementById(`consign-window-status-${form}`);
+        statusEl.textContent = open ? `Open until ${when}` : (expiresAt ? `Closed (since ${when})` : 'Closed - press Open to start');
+        statusEl.style.color = open ? '#16a34a' : 'var(--danger)';
+        document.getElementById(`consign-window-url-${form}`).textContent = url || '';
+        document.getElementById(`consign-window-link-${form}`).style.display = url ? 'flex' : 'none';
+        document.querySelector(`.consign-window-open[data-form="${form}"]`).textContent = open ? 'Restart clock' : 'Open';
+        document.querySelector(`.consign-window-close[data-form="${form}"]`).disabled = !open;
+      }
+    }
+
+    async function setConsignWindow(form, days, btn) {
+      const statusEl = document.getElementById('consignment-status');
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/consign/settings/window', {
+          method: 'POST',
+          headers: locationHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ form, days })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to update');
+        statusEl.textContent = '';
+        renderConsignWindows(data);
+      } catch (err) {
+        statusEl.textContent = err.message;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    document.querySelectorAll('.consign-window-open').forEach(btn => btn.addEventListener('click', () => {
+      const days = parseFloat(document.getElementById('consignment-open-days').value);
+      if (!(days > 0)) {
+        document.getElementById('consignment-status').textContent = 'Enter how many days the link should stay open.';
+        return;
+      }
+      setConsignWindow(btn.dataset.form, days, btn);
+    }));
+
+    document.querySelectorAll('.consign-window-close').forEach(btn => btn.addEventListener('click', () => {
+      if (!confirm('Close this link now? Anyone on it will see "no longer available".')) return;
+      setConsignWindow(btn.dataset.form, 0, btn);
+    }));
 
     document.getElementById('btn-save-consignment').addEventListener('click', async () => {
       const slug = document.getElementById('consignment-slug').value.trim().toLowerCase();
@@ -528,8 +570,7 @@
         if (!res.ok) throw new Error(data.error || 'Failed to save');
         statusEl.textContent = '';
         showSaveNotice('consignment-save-notice');
-        document.getElementById('consignment-share-url').textContent = data.shareUrl;
-        document.getElementById('consignment-share-display').style.display = 'block';
+        renderConsignWindows(data);
       } catch (err) {
         statusEl.textContent = err.message;
       } finally {
@@ -537,16 +578,15 @@
       }
     });
 
-    document.getElementById('btn-copy-consignment-url').addEventListener('click', async () => {
-      const btn = document.getElementById('btn-copy-consignment-url');
+    document.querySelectorAll('.consign-copy-url').forEach(btn => btn.addEventListener('click', async () => {
       try {
-        await navigator.clipboard.writeText(document.getElementById('consignment-share-url').textContent);
+        await navigator.clipboard.writeText(document.getElementById(`consign-window-url-${btn.dataset.form}`).textContent);
         btn.textContent = 'Copied!';
         setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
       } catch {
         alert('Could not copy automatically — the link is shown above, copy it manually.');
       }
-    });
+    }));
 
     async function loadReviewItems() {
       const list = document.getElementById('consignment-review-list');
@@ -611,7 +651,13 @@
     document.getElementById('require-terminal-only').checked = !!settings.requireTerminalOnly;
 
     document.getElementById('btn-save-settings').addEventListener('click', () => {
+      // Spread the current settings first - saveSettings() replaces the
+      // whole stored object, and this page doesn't own every field in it
+      // (e.g. labelWidthMm/labelHeightMm, saved from the main page's
+      // printer popover - js/app.js) - writing only this form's fields
+      // without the spread would silently erase those on every Save here.
       saveSettings({
+        ...getSettings(),
         anthropicKey: document.getElementById('anthropic-key').value.trim(),
         squareAppId: document.getElementById('square-app-id').value.trim(),
         venmoUsername: document.getElementById('venmo-username').value.trim(),

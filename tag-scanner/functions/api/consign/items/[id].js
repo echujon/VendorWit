@@ -22,7 +22,7 @@ export async function onRequestPatch(context) {
   if (!slug) return json({ error: 'slug is required' }, 400);
 
   const session = await resolveConsignorSession(request, env, slug);
-  if (!session.authenticated) return json({ error: 'Not authenticated' }, 401);
+  if (!session.authenticated) return session.closed ? json({ error: 'This page is no longer available' }, 410) : json({ error: 'Not authenticated' }, 401);
 
   const existing = await env.DB.prepare(
     'SELECT status FROM consignor_items WHERE id = ? AND consignor_id = ?'
@@ -63,7 +63,7 @@ export async function onRequestDelete(context) {
   if (!slug) return json({ error: 'slug is required' }, 400);
 
   const session = await resolveConsignorSession(request, env, slug);
-  if (!session.authenticated) return json({ error: 'Not authenticated' }, 401);
+  if (!session.authenticated) return session.closed ? json({ error: 'This page is no longer available' }, 410) : json({ error: 'Not authenticated' }, 401);
 
   const row = await env.DB.prepare(
     'SELECT status FROM consignor_items WHERE id = ? AND consignor_id = ?'

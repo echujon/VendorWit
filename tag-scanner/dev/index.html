@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#2563eb">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Dev</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .dev-org { border: 1px solid var(--border, #e8d5c0); border-radius: 8px; padding: 0.75rem 1rem; margin-top: 0.75rem; }
+    .dev-org h3 { margin: 0 0 0.5rem; font-size: 1rem; }
+    .dev-loc { border-top: 1px solid var(--border, #e8d5c0); padding: 0.6rem 0; }
+    .dev-loc:first-of-type { border-top: none; }
+    .dev-loc-name { font-weight: 600; }
+    .dev-loc-meta { font-size: 0.8rem; color: var(--muted, #8a7060); margin: 0.15rem 0 0.4rem; }
+    .dev-code { font-family: monospace; font-weight: 700; letter-spacing: 0.05em; color: var(--text, inherit); }
+    .dev-row { display: flex; gap: 0.5rem; align-items: center; }
+    .dev-row input { flex: 1; min-width: 0; }
+    .dev-row .btn { flex: none; }
+    .dev-error { color: var(--danger); font-weight: 600; font-size: 0.9rem; margin-top: 0.5rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="/" class="icon-btn" title="Back to app" style="text-decoration:none;">←</a>
+    <h1>Dev</h1>
+    <button class="icon-btn hidden" id="btn-dev-logout" type="button" title="Log out">⎋</button>
+  </header>
+
+  <div class="settings-body">
+    <div class="settings-section" id="dev-unlock" style="display:none;">
+      <h2>Dev Access</h2>
+      <div class="settings-field">
+        <label for="dev-key">Dev Key</label>
+        <input type="password" id="dev-key" autocomplete="current-password">
+      </div>
+      <button class="btn btn-primary" id="btn-dev-unlock" type="button">Unlock</button>
+      <div class="dev-error" id="dev-unlock-error"></div>
+    </div>
+
+    <div id="dev-dashboard" style="display:none;">
+      <div class="settings-section">
+        <h2>Organizations &amp; Events</h2>
+        <p style="font-size:0.85rem;color:var(--muted,#8a7060);">"Open as admin" switches this device into that event with full admin rights.</p>
+        <div id="dev-orgs"></div>
+      </div>
+
+      <div class="settings-section">
+        <h2>New Organization</h2>
+        <div class="settings-field">
+          <label for="dev-new-org-name">Organization Name</label>
+          <input type="text" id="dev-new-org-name" placeholder="e.g. Snowbasin Sports">
+        </div>
+        <div class="settings-field">
+          <label for="dev-new-org-location">First Event / Location Name</label>
+          <input type="text" id="dev-new-org-location" placeholder="e.g. Ski Swap 2026">
+        </div>
+        <button class="btn btn-primary" id="btn-dev-create-org" type="button">Create Organization</button>
+        <div class="dev-error" id="dev-create-error"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { setLocationCode, setRole } from '/js/storage.js';
+
+    const DEV_KEY_STORAGE = 'tag_scanner_dev_key';
+    const unlockEl = document.getElementById('dev-unlock');
+    const dashboardEl = document.getElementById('dev-dashboard');
+    const logoutBtn = document.getElementById('btn-dev-logout');
+
+    function getKey() { return localStorage.getItem(DEV_KEY_STORAGE) || ''; }
+
+    function escapeHtml(s) {
+      return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    async function devFetch(url, opts = {}, key = getKey()) {
+      const res = await fetch(url, { ...opts, headers: { ...(opts.headers || {}), 'X-Dev-Key': key } });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401 && key === getKey()) showUnlock('Your saved dev key is no longer valid.');
+      if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+      return data;
+    }
+
+    function showUnlock(message = '') {
+      localStorage.removeItem(DEV_KEY_STORAGE);
+      document.getElementById('dev-unlock-error').textContent = message;
+      unlockEl.style.display = 'block';
+      dashboardEl.style.display = 'none';
+      logoutBtn.classList.add('hidden');
+    }
+
+    function showDashboard() {
+      unlockEl.style.display = 'none';
+      dashboardEl.style.display = 'block';
+      logoutBtn.classList.remove('hidden');
+    }
+
+    async function loadOverview() {
+      const data = await devFetch('/api/dev/overview');
+      renderOrgs(data.organizations);
+      showDashboard();
+    }
+
+    function renderOrgs(orgs) {
+      const el = document.getElementById('dev-orgs');
+      if (!orgs.length) { el.innerHTML = '<p>No organizations yet.</p>'; return; }
+      el.innerHTML = orgs.map(org => `
+        <div class="dev-org">
+          <h3>${escapeHtml(org.name)}</h3>
+          ${org.locations.map(loc => `
+            <div class="dev-loc">
+              <div class="dev-loc-name">${escapeHtml(loc.name)}${loc.eventName && loc.eventName !== loc.name ? ` <span style="font-weight:400;color:var(--muted,#8a7060);">(${escapeHtml(loc.eventName)})</span>` : ''}</div>
+              <div class="dev-loc-meta">
+                Admin <span class="dev-code">${escapeHtml(loc.joinCode)}</span>
+                · Aide <span class="dev-code">${loc.aideCode ? escapeHtml(loc.aideCode) : '—'}</span>
+                ${loc.consignmentSlug ? ` · /consign/${escapeHtml(loc.consignmentSlug)}` : ''}
+              </div>
+              <button class="btn btn-secondary dev-open" data-code="${escapeHtml(loc.joinCode)}" type="button" style="font-size:0.85rem;">Open as admin</button>
+            </div>
+          `).join('')}
+          <div class="dev-row" style="margin-top:0.5rem;">
+            <input type="text" class="dev-add-loc-name" data-org="${escapeHtml(org.id)}" placeholder="New event name">
+            <button class="btn btn-outline dev-add-loc" data-org="${escapeHtml(org.id)}" type="button" style="font-size:0.85rem;">+ Add event</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    document.getElementById('dev-orgs').addEventListener('click', async e => {
+      const openBtn = e.target.closest('.dev-open');
+      if (openBtn) {
+        setLocationCode(openBtn.dataset.code);
+        setRole('admin');
+        location.href = '/';
+        return;
+      }
+      const addBtn = e.target.closest('.dev-add-loc');
+      if (addBtn) {
+        const input = document.querySelector(`.dev-add-loc-name[data-org="${CSS.escape(addBtn.dataset.org)}"]`);
+        const locationName = input.value.trim();
+        if (!locationName) return;
+        addBtn.disabled = true;
+        try {
+          await devFetch('/api/dev/locations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ organizationId: addBtn.dataset.org, locationName })
+          });
+          await loadOverview();
+        } catch (err) {
+          alert(err.message);
+          addBtn.disabled = false;
+        }
+      }
+    });
+
+    document.getElementById('btn-dev-unlock').addEventListener('click', async () => {
+      const key = document.getElementById('dev-key').value.trim();
+      if (!key) return;
+      const btn = document.getElementById('btn-dev-unlock');
+      const errorEl = document.getElementById('dev-unlock-error');
+      btn.disabled = true;
+      errorEl.textContent = '';
+      try {
+        const data = await devFetch('/api/dev/overview', {}, key);
+        localStorage.setItem(DEV_KEY_STORAGE, key);
+        document.getElementById('dev-key').value = '';
+        renderOrgs(data.organizations);
+        showDashboard();
+      } catch (err) {
+        errorEl.textContent = err.message;
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById('dev-key').addEventListener('keydown', e => {
+      if (e.key === 'Enter') document.getElementById('btn-dev-unlock').click();
+    });
+
+    document.getElementById('btn-dev-create-org').addEventListener('click', async () => {
+      const organizationName = document.getElementById('dev-new-org-name').value.trim();
+      const locationName = document.getElementById('dev-new-org-location').value.trim();
+      const errorEl = document.getElementById('dev-create-error');
+      if (!organizationName || !locationName) { errorEl.textContent = 'Both names are required.'; return; }
+      const btn = document.getElementById('btn-dev-create-org');
+      btn.disabled = true;
+      errorEl.textContent = '';
+      try {
+        await devFetch('/api/orgs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ organizationName, locationName })
+        });
+        document.getElementById('dev-new-org-name').value = '';
+        document.getElementById('dev-new-org-location').value = '';
+        await loadOverview();
+      } catch (err) {
+        errorEl.textContent = err.message;
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    logoutBtn.addEventListener('click', () => showUnlock());
+
+    if (getKey()) {
+      loadOverview().catch(err => {
+        if (dashboardEl.style.display !== 'block') showUnlock(err.message);
+      });
+    } else {
+      showUnlock();
+    }
+  </script>
+</body>
+</html>

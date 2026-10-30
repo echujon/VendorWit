@@ -5,13 +5,7 @@
 // new ones (see functions/_shared/location.js for how role is derived).
 
 import { resolveLocation } from '../../_shared/location.js';
-
-function randomCode() {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I - easy to misread
-  let code = '';
-  for (let i = 0; i < 8; i++) code += alphabet[Math.floor(Math.random() * alphabet.length)];
-  return code;
-}
+import { randomJoinCode as randomCode } from '../orgs.js';
 
 export async function onRequestGet(context) {
   const { request, env } = context;

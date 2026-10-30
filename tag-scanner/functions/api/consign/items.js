@@ -20,7 +20,7 @@ export async function onRequestGet(context) {
   if (!slug) return json({ error: 'slug is required' }, 400);
 
   const session = await resolveConsignorSession(request, env, slug);
-  if (!session.authenticated) return json({ error: 'Not authenticated' }, 401);
+  if (!session.authenticated) return session.closed ? json({ error: 'This page is no longer available' }, 410) : json({ error: 'Not authenticated' }, 401);
 
   const { results } = await env.DB.prepare(
     'SELECT id, name, description, category, price, quantity, photo_data_url, status, created_at FROM consignor_items WHERE consignor_id = ? ORDER BY created_at DESC'
@@ -38,7 +38,7 @@ export async function onRequestPost(context) {
   if (!slug) return json({ error: 'slug is required' }, 400);
 
   const session = await resolveConsignorSession(request, env, slug);
-  if (!session.authenticated) return json({ error: 'Not authenticated' }, 401);
+  if (!session.authenticated) return session.closed ? json({ error: 'This page is no longer available' }, 410) : json({ error: 'Not authenticated' }, 401);
   if (!session.consignor.signedAt) {
     return json({ error: 'Finish signing the consignment agreement before adding items' }, 403);
   }

@@ -73,6 +73,37 @@
         <div class="consign-status" id="consign-form-status"></div>
       </div>
 
+      <div id="consign-step-inperson" style="display:none;">
+        <h2 class="consign-event-name"></h2>
+        <p>Fill in your details and sign below to register.</p>
+        <div class="settings-field">
+          <label for="inperson-email">Email</label>
+          <input type="email" id="inperson-email" placeholder="you@example.com" autocomplete="email">
+        </div>
+        <div class="settings-field">
+          <label for="inperson-phone">Phone Number</label>
+          <input type="tel" id="inperson-phone" placeholder="(555) 555-5555" autocomplete="tel">
+        </div>
+        <div class="settings-field">
+          <label for="inperson-address">Address</label>
+          <input type="text" id="inperson-address" placeholder="123 Main St, City, ST 00000" autocomplete="street-address">
+        </div>
+        <div class="settings-field">
+          <label for="inperson-terms-box">Consignment Agreement</label>
+          <div class="consign-terms-box" id="inperson-terms-box"></div>
+        </div>
+        <div class="settings-field">
+          <label for="inperson-signature">Type your full name to sign</label>
+          <input type="text" id="inperson-signature" placeholder="Full legal name" autocomplete="name">
+        </div>
+        <label class="consign-agree-row">
+          <input type="checkbox" id="inperson-agree">
+          I have read and agree to the terms above.
+        </label>
+        <button class="btn btn-primary" id="btn-inperson-submit" type="button">Submit registration</button>
+        <div class="consign-status" id="inperson-form-status"></div>
+      </div>
+
       <div id="consign-step-done" style="display:none;">
         <h2>You're all set!</h2>
         <p id="consign-done-message"></p>
@@ -136,7 +167,23 @@
   </div>
 
   <script type="module">
-    const slug = location.pathname.replace(/^\/consign\/?/, '').split('/')[0] || '';
+    // /consign/<slug> is the online form; /consign/<slug>/in-person/<key>
+    // is the in-person one. The key goes on every API call so the server
+    // knows which form's open/close window applies.
+    const [slug = '', pathKind, pathKey] = location.pathname.replace(/^\/consign\/?/, '').split('/');
+    const accessKey = pathKind === 'in-person' ? (pathKey || '-') : '';
+
+    // 410 = this form's window closed (possibly while the page was open).
+    async function api(url, opts = {}) {
+      const headers = { ...(opts.headers || {}) };
+      if (accessKey) headers['X-Consign-Access'] = accessKey;
+      const res = await fetch(url, { ...opts, headers });
+      if (res.status === 410) {
+        location.replace('/unavailable/');
+        throw new Error('This page is no longer available');
+      }
+      return res;
+    }
 
     const loadingEl = document.getElementById('consign-loading');
     const notFoundEl = document.getElementById('consign-not-found');
@@ -144,7 +191,8 @@
     const stepCode = document.getElementById('consign-step-code');
     const stepForm = document.getElementById('consign-step-form');
     const stepDone = document.getElementById('consign-step-done');
-    const allSteps = [loadingEl, notFoundEl, stepEmail, stepCode, stepForm, stepDone];
+    const stepInPerson = document.getElementById('consign-step-inperson');
+    const allSteps = [loadingEl, notFoundEl, stepEmail, stepCode, stepForm, stepInPerson, stepDone];
 
     let currentEmail = '';
     let currentLocationName = '';
@@ -185,7 +233,7 @@
 
     async function loadMyItems() {
       try {
-        const res = await fetch(`/api/consign/items?slug=${encodeURIComponent(slug)}`);
+        const res = await api(`/api/consign/items?slug=${encodeURIComponent(slug)}`);
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
         myItemsCache = data.items;
@@ -225,7 +273,7 @@
 
       if (removeBtn) {
         try {
-          const res = await fetch(`/api/consign/items/${removeBtn.dataset.id}?slug=${encodeURIComponent(slug)}`, { method: 'DELETE' });
+          const res = await api(`/api/consign/items/${removeBtn.dataset.id}?slug=${encodeURIComponent(slug)}`, { method: 'DELETE' });
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || 'Failed to remove item');
           await loadMyItems();
@@ -322,7 +370,7 @@
 
         const url = editingItemId ? `/api/consign/items/${editingItemId}` : '/api/consign/items';
         const method = editingItemId ? 'PATCH' : 'POST';
-        const res = await fetch(url, {
+        const res = await api(url, {
           method,
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -343,7 +391,7 @@
 
       let locData;
       try {
-        const res = await fetch(`/api/consign/location?slug=${encodeURIComponent(slug)}`);
+        const res = await api(`/api/consign/location?slug=${encodeURIComponent(slug)}`);
         locData = await res.json();
         if (!res.ok) { showStep(notFoundEl); return; }
       } catch {
@@ -352,8 +400,9 @@
       }
       currentLocationName = locData.locationName;
       setEventName(currentLocationName);
+      const inPerson = locData.mode === 'inperson';
 
-      const meRes = await fetch(`/api/consign/me?slug=${encodeURIComponent(slug)}`);
+      const meRes = await api(`/api/consign/me?slug=${encodeURIComponent(slug)}`);
       const me = await meRes.json();
       if (me.authenticated) {
         currentEmail = me.consignor.email;
@@ -368,8 +417,42 @@
         return;
       }
 
+      if (inPerson) {
+        document.getElementById('inperson-terms-box').textContent = locData.terms || 'No terms configured for this event yet.';
+        showStep(stepInPerson);
+        return;
+      }
       showStep(stepEmail);
     }
+
+    document.getElementById('btn-inperson-submit').addEventListener('click', async () => {
+      const email = document.getElementById('inperson-email').value.trim();
+      const phone = document.getElementById('inperson-phone').value.trim();
+      const address = document.getElementById('inperson-address').value.trim();
+      const signedName = document.getElementById('inperson-signature').value.trim();
+      const agreedToTerms = document.getElementById('inperson-agree').checked;
+      const statusEl = document.getElementById('inperson-form-status');
+      if (!email || !phone || !address || !signedName || !agreedToTerms) {
+        statusEl.textContent = 'Email, phone, address, signature, and agreement are all required.';
+        return;
+      }
+      const btn = document.getElementById('btn-inperson-submit');
+      btn.disabled = true;
+      try {
+        const res = await api('/api/consign/in-person-register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slug, email, phone, address, signedName, agreedToTerms })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to submit');
+        showDone(null);
+      } catch (err) {
+        statusEl.textContent = err.message;
+      } finally {
+        btn.disabled = false;
+      }
+    });
 
     document.getElementById('btn-consign-request-code').addEventListener('click', async () => {
       const email = document.getElementById('consign-email').value.trim();
@@ -378,7 +461,7 @@
       const btn = document.getElementById('btn-consign-request-code');
       btn.disabled = true;
       try {
-        const res = await fetch('/api/consign/request-code', {
+        const res = await api('/api/consign/request-code', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ slug, email })
@@ -400,7 +483,7 @@
       const btn = document.getElementById('btn-consign-verify');
       btn.disabled = true;
       try {
-        const res = await fetch('/api/consign/verify', {
+        const res = await api('/api/consign/verify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ slug, email: currentEmail, code })
@@ -426,7 +509,7 @@
       const btn = document.getElementById('btn-consign-resend');
       btn.disabled = true;
       try {
-        await fetch('/api/consign/request-code', {
+        await api('/api/consign/request-code', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ slug, email: currentEmail })
@@ -450,7 +533,7 @@
       const btn = document.getElementById('btn-consign-submit');
       btn.disabled = true;
       try {
-        const res = await fetch('/api/consign/submit', {
+        const res = await api('/api/consign/submit', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ slug, phone, address, signedName, agreedToTerms })

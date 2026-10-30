@@ -3,19 +3,24 @@
 // Creates an organization and its first location, returning a join code
 // staff enter once in Settings to bind their device to that location's
 // shared inventory and terminal queue (see functions/_shared/location.js).
-// No auth yet - intentionally simple, matching the rest of the app's
-// current no-login posture; a real per-staff auth key is a later phase.
+// Dev-only (X-Dev-Key, see functions/_shared/dev.js) - otherwise anyone
+// could mint organizations.
 
-function randomJoinCode() {
+import { requireDev } from '../_shared/dev.js';
+
+// These codes are credentials, so crypto randomness rather than Math.random.
+// 32-char alphabet divides 256 evenly, so `% 32` has no bias.
+export function randomJoinCode() {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I - easy to misread
-  let code = '';
-  for (let i = 0; i < 8; i++) code += alphabet[Math.floor(Math.random() * alphabet.length)];
-  return code;
+  const bytes = crypto.getRandomValues(new Uint8Array(8));
+  return Array.from(bytes, b => alphabet[b % alphabet.length]).join('');
 }
 
 export async function onRequestPost(context) {
   const { request, env } = context;
   if (!env.DB) return json({ error: 'Server not configured (DB)' }, 500);
+  const dev = await requireDev(request, env);
+  if (dev.error) return json({ error: dev.error }, dev.status);
 
   const body = await request.json().catch(() => ({}));
   const organizationName = (body.organizationName || '').trim();

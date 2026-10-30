@@ -258,6 +258,22 @@ main { flex: 1; padding: 1.25rem; padding-bottom: 5rem; display: flex; flex-dire
 }
 .match-photo.hidden { display: none; }
 
+/* Phomemo label preview (js/app.js buildLabelCanvas) - shown at roughly
+   native size rather than .match-photo's 160px photo cap, so small label
+   text is actually legible for checking layout before printing. White
+   background regardless of theme since the canvas itself is drawn
+   black-on-white, same as the physical label. */
+.label-preview {
+  display: block;
+  max-width: 280px;
+  width: 100%;
+  margin: 0 auto 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #fff;
+}
+.label-preview.hidden { display: none; }
+
 .match-info { display: flex; flex-direction: column; gap: 0.6rem; margin-bottom: 1.25rem; }
 .match-row { display: flex; justify-content: space-between; gap: 1rem; font-size: 0.95rem; }
 .match-label { color: var(--muted); font-weight: 600; }
@@ -398,6 +414,18 @@ main { flex: 1; padding: 1.25rem; padding-bottom: 5rem; display: flex; flex-dire
   justify-content: center;
   gap: 1rem;
   text-align: center;
+}
+
+/* .btn's flex: 1 is meant for buttons sitting side by side in a row (e.g.
+   .result-actions) so they split that row's width evenly - inside
+   .modal-content's *column* flex layout above, the same flex: 1 instead
+   grows each button to fill whatever vertical space is left over, which
+   on a tall mobile viewport with just a couple of short fields is a lot -
+   hence buttons rendering tall/bulky in any modal. Pin them to their
+   natural content height, full width, same as every other modal field. */
+.modal-content > .btn {
+  flex: none;
+  width: 100%;
 }
 
 .modal-close {

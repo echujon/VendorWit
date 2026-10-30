@@ -90,6 +90,24 @@ wrangler d1 migrations apply vendorwit-inventory --remote
 Durable Object above, D1 bindings work directly in a Pages project's
 `wrangler.toml` - no separate Worker needed.
 
+### Dev access (`/dev`)
+
+One platform-wide key sits above every organization and location: the
+`DEV_KEY` secret, sent as `X-Dev-Key` (`functions/_shared/dev.js`). The
+unlinked `/dev` page uses it to list every organization/location with its
+codes, open any location as admin, and add organizations and events.
+Creating an organization (`POST /api/orgs`) is dev-only; Settings no longer
+offers it.
+
+Set it once per environment - the value is never shown again, so save it
+in a password manager first:
+```
+openssl rand -base64 24            # generate a key
+wrangler pages secret put DEV_KEY  # paste it at the prompt, not on the command line
+```
+Like any Pages secret, it takes effect on the next deployment. Locally,
+put a throwaway `DEV_KEY=...` in `.dev.vars` (git-ignored) instead.
+
 ## Square OAuth per organization
 
 Each organization can connect its own Square account instead of relying on
@@ -167,6 +185,47 @@ To actually send real emails:
 **Not built yet** (recognized, deliberately deferred): a staff-facing
 list/export of submitted registrations - right now the only way to see
 them is a direct D1 query against the `consignors` table.
+
+## Phomemo label printer (Bluetooth)
+
+The "Print Sticker" button on a matched item can print a real label -
+description, the item's QR code (the same `uniqueId` the sticker image
+already encoded), and price - directly to a Phomemo M110/M120/M220/M200
+label printer over Bluetooth, instead of only generating the on-screen QR
+to save/share into Phomemo's own Print Master app. Both still happen - the
+on-screen QR and share flow are unchanged - printing to a connected printer
+is additive.
+
+**Chrome only, one device.** Printing uses the Web Bluetooth API
+(`js/phomemo.js`), which only Chrome implements (desktop or Android) -
+Safari never will on iOS, by Apple's own platform restriction, not
+something fixable from here. The printer connects to *the single device*
+that paired it (tap the printer icon, top-right of the header) - there's no
+cross-device queue, so whichever phone/laptop paired the printer is the one
+that has to run the Print Sticker click. If that one-device model stops
+being enough (e.g. several staff need to print to a shared printer from
+their own phones), that'd need a shared print-job queue - see
+`TerminalQueue`'s Durable Object above for the existing pattern to copy.
+
+**Protocol.** Phomemo has no public spec for this; the BLE service/
+characteristic UUIDs, command bytes, and inter-write delays in
+`js/phomemo.js` are ported from
+[mkuhlmann/pyphomemo](https://github.com/mkuhlmann/pyphomemo) (itself
+reverse-engineered from the vendor app's BLE traffic), which covers the
+M110/M120/M220/M200 family as one 384-dot-wide (203dpi) protocol. The
+delays between writes matter - sending the raster as one unbroken stream
+is reported to make the printer flash and discard the job.
+
+**Label size.** Settings -> Label Printer has Width/Height (mm) fields,
+defaulting to 40x30mm - the die-cut roll the M120 ships with
+(`MEDIA_LABEL_WITH_GAPS` in `js/phomemo.js` - the printer senses each
+label's gap to register printing correctly; using `MEDIA_CONTINUOUS` on
+die-cut stock will drift). `buildLabelCanvas()` (`js/app.js`) reads that
+setting and scales the description/QR/price layout to it - width gets
+rounded to a multiple of 8 dots (the raster byte-packing requirement) and
+capped at the print head's physical 384-dot/48mm width; height is
+unconstrained (any die-cut height, or a tall `MEDIA_CONTINUOUS` label if
+that's ever wired up as a Settings option).
 
 ## Routing: why `_worker.js` instead of file-based Functions
 

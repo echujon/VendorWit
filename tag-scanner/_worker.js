@@ -28,6 +28,7 @@ import * as queueActiveSalesById from './functions/api/queue/active-sales/[id].j
 import * as queueActiveSalesKeep from './functions/api/queue/active-sales/keep.js';
 import * as debugSquare from './functions/api/debug-square.js';
 import * as orgs from './functions/api/orgs.js';
+import * as dev from './functions/api/dev.js';
 import * as locationAideCode from './functions/api/location/aide-code.js';
 import * as items from './functions/api/items.js';
 import * as itemsById from './functions/api/items/[id].js';
@@ -46,6 +47,8 @@ import * as consignRequestCode from './functions/api/consign/request-code.js';
 import * as consignVerify from './functions/api/consign/verify.js';
 import * as consignMe from './functions/api/consign/me.js';
 import * as consignSubmit from './functions/api/consign/submit.js';
+import * as consignInPersonRegister from './functions/api/consign/in-person-register.js';
+import { resolveConsignForm } from './functions/_shared/consignForm.js';
 import * as consignSettings from './functions/api/consign/settings.js';
 import * as consignItems from './functions/api/consign/items.js';
 import * as consignItemsById from './functions/api/consign/items/[id].js';
@@ -125,6 +128,12 @@ export default {
       return queueActiveSalesKeep.onRequestPost(context);
     }
 
+    if (pathname === '/api/dev/overview' && method === 'GET') {
+      return dev.onRequestGetOverview(context);
+    }
+    if (pathname === '/api/dev/locations' && method === 'POST') {
+      return dev.onRequestPostLocation(context);
+    }
     if (pathname === '/api/orgs' && method === 'POST') {
       return orgs.onRequestPost(context);
     }
@@ -190,6 +199,12 @@ export default {
     if (pathname === '/api/consign/submit' && method === 'POST') {
       return consignSubmit.onRequestPost(context);
     }
+    if (pathname === '/api/consign/in-person-register' && method === 'POST') {
+      return consignInPersonRegister.onRequestPost(context);
+    }
+    if (pathname === '/api/consign/settings/window' && method === 'POST') {
+      return consignSettings.onRequestPostWindow(context);
+    }
     if (pathname === '/api/consign/settings') {
       if (method === 'GET') return consignSettings.onRequestGet(context);
       if (method === 'POST') return consignSettings.onRequestPost(context);
@@ -223,6 +238,15 @@ export default {
     // to the directory form from Pages' own asset server, which would
     // then match this same regex again - an infinite redirect loop.
     if (/^\/consign(?:\/.*)?$/.test(pathname) && method === 'GET') {
+      // /consign/<slug> (online) or /consign/<slug>/in-person/<key>. A
+      // closed window redirects to the static "no longer available" page
+      // before the form ever loads; unknown links still get the shell,
+      // which shows its own not-found message.
+      const [slug, kind, key] = pathname.replace(/^\/consign\/?/, '').split('/');
+      if (slug && env.DB) {
+        const form = await resolveConsignForm(env, slug, kind === 'in-person' ? (key || '-') : null);
+        if (form.closed) return Response.redirect(new URL('/unavailable/', request.url).toString(), 302);
+      }
       const assetUrl = new URL(request.url);
       assetUrl.pathname = '/consign/';
       return env.ASSETS.fetch(new Request(assetUrl, request));

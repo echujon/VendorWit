@@ -18,7 +18,7 @@ export async function onRequestPost(context) {
   if (!slug) return json({ error: 'slug is required' }, 400);
 
   const session = await resolveConsignorSession(request, env, slug);
-  if (!session.authenticated) return json({ error: 'Not authenticated' }, 401);
+  if (!session.authenticated) return session.closed ? json({ error: 'This page is no longer available' }, 410) : json({ error: 'Not authenticated' }, 401);
 
   const phone = (body.phone || '').trim();
   const address = (body.address || '').trim();

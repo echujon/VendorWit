@@ -1,12 +1,14 @@
-import { getRecords, getCachedRecords, saveRecord, updateRecord, deleteRecord, exportCSV, getSettings, getClientId, getLocationCode, setLocationCode, getRole, setRole, findByUniqueId, findByVisualMatch, createSale, getSales } from './storage.js';
+import { getRecords, getCachedRecords, saveRecord, updateRecord, deleteRecord, exportCSV, getSettings, saveSettings, getClientId, getLocationCode, setLocationCode, getRole, setRole, findByUniqueId, findByVisualMatch, createSale, getSales } from './storage.js';
 import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0/+esm';
 import QRCode from 'https://cdn.jsdelivr.net/npm/qrcode@1.5.4/+esm';
+import * as phomemo from './phomemo.js';
 
 // --- State ---
 let stream = null;
 let capturedBlob = null;
 let cameraActive = false;
 let matchedRecord = null;
+let pendingLabelCanvas = null; // set by Print Sticker's preview, consumed by Confirm Print
 let cart = []; // { id, name, price, quantity, subVendor } — quantity here is units being sold, not inventory
 
 // --- DOM ---
@@ -98,6 +100,10 @@ const btnPrintSticker = document.getElementById('btn-print-sticker');
 const venmoQr = document.getElementById('venmo-qr');
 const stickerQr = document.getElementById('sticker-qr');
 const stickerQrHint = document.getElementById('sticker-qr-hint');
+const labelPreview = document.getElementById('label-preview');
+const labelPreviewHint = document.getElementById('label-preview-hint');
+const btnConfirmPrint = document.getElementById('btn-confirm-print');
+const printWarning = document.getElementById('print-warning');
 btnPrintSticker.classList.remove('hidden');
 const btnAddToCart = document.getElementById('btn-add-to-cart');
 const reviewSaleBar = document.getElementById('review-sale-bar');
@@ -109,6 +115,16 @@ const reviewTotalDisplay = document.getElementById('review-total-display');
 const btnReviewTerminal = document.getElementById('btn-review-terminal');
 const pendingSalesBar = document.getElementById('pending-sales-bar');
 const btnOpenQueue = document.getElementById('btn-open-queue');
+const btnPrinterConnect = document.getElementById('btn-printer-connect');
+const printerConnectedDot = document.getElementById('printer-connected-dot');
+const printerModal = document.getElementById('printer-modal');
+const btnPrinterModalClose = document.getElementById('btn-printer-modal-close');
+const printerModalStatus = document.getElementById('printer-modal-status');
+const btnPrinterModalConnect = document.getElementById('btn-printer-modal-connect');
+const printerLabelWidthInput = document.getElementById('printer-label-width-mm');
+const printerLabelHeightInput = document.getElementById('printer-label-height-mm');
+const printerLabelOffsetInput = document.getElementById('printer-label-offset-mm');
+const btnPrinterModalSaveSize = document.getElementById('btn-printer-modal-save-size');
 const queueBadge = document.getElementById('queue-badge');
 const queueModal = document.getElementById('queue-modal');
 const btnQueueModalClose = document.getElementById('btn-queue-modal-close');
@@ -607,6 +623,11 @@ function showMatchCard(record, matchType = 'text', score = null) {
   stickerQr.classList.add('hidden');
   stickerQr.removeAttribute('src');
   stickerQrHint.classList.add('hidden');
+  labelPreview.classList.add('hidden');
+  labelPreview.removeAttribute('src');
+  labelPreviewHint.classList.add('hidden');
+  pendingLabelCanvas = null;
+  updatePrintButtonState();
 
   matchCard.classList.add('visible');
   matchCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -1357,6 +1378,254 @@ btnVenmoMatch.addEventListener('click', async () => {
   }
 });
 
+// --- Phomemo label printer (Bluetooth, Chrome-only - see js/phomemo.js) ---
+//
+// Connection + label size live together in one popover on this page, not
+// in Settings - navigating to a different page is a full reload, which
+// drops the Bluetooth connection in every browser (not fixable from
+// script), so anything printer-related that would otherwise send someone
+// to Settings lives here instead.
+
+function updatePrinterButton() {
+  const connected = phomemo.isConnected();
+  printerConnectedDot.classList.toggle('hidden', !connected);
+  btnPrinterConnect.title = connected
+    ? `Connected: ${phomemo.connectedPrinterName()}`
+    : 'Connect label printer';
+  updatePrintButtonState();
+}
+
+// Print stays disabled until there's both a preview to print AND a
+// connected printer - the warning only needs to call out the printer,
+// since the preview step happens automatically as soon as it's missing.
+function updatePrintButtonState() {
+  const connected = phomemo.isConnected();
+  btnConfirmPrint.disabled = !pendingLabelCanvas || !connected;
+  printWarning.classList.toggle('hidden', !pendingLabelCanvas || connected);
+}
+
+function updatePrinterModalStatus() {
+  const connected = phomemo.isConnected();
+  printerModalStatus.textContent = connected
+    ? `Connected: ${phomemo.connectedPrinterName()}`
+    : 'Not connected';
+  btnPrinterModalConnect.textContent = connected ? 'Disconnect' : 'Connect';
+}
+
+btnPrinterConnect.addEventListener('click', () => {
+  const settings = getSettings();
+  printerLabelWidthInput.value = settings.labelWidthMm || 40;
+  printerLabelHeightInput.value = settings.labelHeightMm || 30;
+  printerLabelOffsetInput.value = settings.labelOffsetMm || 0;
+  updatePrinterModalStatus();
+  printerModal.classList.remove('hidden');
+});
+
+btnPrinterModalClose.addEventListener('click', () => {
+  printerModal.classList.add('hidden');
+});
+
+btnPrinterModalConnect.addEventListener('click', async () => {
+  if (phomemo.isConnected()) {
+    phomemo.disconnectPrinter();
+    updatePrinterModalStatus();
+    updatePrinterButton();
+    toast('Printer disconnected');
+    return;
+  }
+  try {
+    const name = await phomemo.connectPrinter();
+    updatePrinterModalStatus();
+    updatePrinterButton();
+    toast(`Connected to ${name}`, 'success');
+  } catch (err) {
+    // Canceling the device picker itself also throws "NotFoundError" (same
+    // DOMException name as "this device doesn't have the printer's GATT
+    // service"), so that case alone is told apart by message text, not
+    // name - don't lump a genuinely wrong device pick in with "they
+    // canceled, nothing to report." Picking a non-printer device from a
+    // broad acceptAllDevices list is the expected way someone narrows it
+    // down, so it needs its own clear, retryable error.
+    const userCanceled = err.name === 'NotFoundError' && /chooser/i.test(err.message);
+    if (!userCanceled) {
+      const hint = err.name === 'NotFoundError'
+        ? 'Not a label printer (no matching service) - try a different device from the list.'
+        : err.message;
+      toast('Printer connect error: ' + hint, 'error');
+    }
+  }
+});
+
+btnPrinterModalSaveSize.addEventListener('click', () => {
+  // Spread the current settings first - saveSettings() replaces the whole
+  // stored object, and this popover doesn't own every field in it (e.g.
+  // Settings page fields like venmoUsername) - writing only these without
+  // the spread would silently erase those.
+  saveSettings({
+    ...getSettings(),
+    labelWidthMm: parseFloat(printerLabelWidthInput.value) || 40,
+    labelHeightMm: parseFloat(printerLabelHeightInput.value) || 30,
+    labelOffsetMm: parseFloat(printerLabelOffsetInput.value) || 0
+  });
+  toast('Label size saved', 'success');
+});
+
+function loadImageFromSrc(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+// Wraps `text` to fit `maxWidth` px (per ctx.font already set by the
+// caller), capping at `maxLines` and ellipsizing the last line if there's
+// more text than that still fits - a 40x30mm label has no room for a third
+// line of item description.
+function wrapTextLines(ctx, text, maxWidth, maxLines) {
+  const words = (text || '').split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = '';
+  for (const word of words) {
+    const candidate = line ? `${line} ${word}` : word;
+    if (ctx.measureText(candidate).width <= maxWidth || !line) {
+      line = candidate;
+    } else {
+      lines.push(line);
+      line = word;
+      if (lines.length === maxLines) break;
+    }
+  }
+  if (lines.length < maxLines && line) lines.push(line);
+  if (lines.length === maxLines) {
+    let last = lines[maxLines - 1];
+    while (ctx.measureText(last + '…').width > maxWidth && last.length > 1) {
+      last = last.slice(0, -1);
+    }
+    lines[maxLines - 1] = last + (last.length < (words.join(' ')).length ? '…' : '');
+  }
+  return lines;
+}
+
+// Label pixel size comes from Settings -> Label Printer (mm, matching
+// whatever roll is actually loaded - 40x30mm, the M120's default roll, if
+// never set). Width is rounded to a multiple of 8 dots (canvasToRaster's
+// byte-packing requirement) and capped at the printer head's physical
+// 384-dot (48mm) width - a wider setting just gets clipped there, it can't
+// print past the head regardless of label stock.
+function labelPixelSize() {
+  const settings = getSettings();
+  const widthMm = parseFloat(settings.labelWidthMm) || 40;
+  const heightMm = parseFloat(settings.labelHeightMm) || 30;
+  const rawWidthPx = Math.round(widthMm * phomemo.PX_PER_MM);
+  const width = Math.min(phomemo.PRINTER_WIDTH_PX, Math.max(8, Math.round(rawWidthPx / 8) * 8));
+  const height = Math.max(8, Math.round(heightMm * phomemo.PX_PER_MM));
+  return { width, height };
+}
+
+// Renders a label sized per labelPixelSize() (40x30mm / 320x240px unless
+// changed in Settings) - description and price stacked on the left,
+// the same item-uniqueId QR code the on-screen sticker uses as large as
+// legibly possible on the right, all scaled to the label's actual size
+// rather than fixed pixel values so a differently-sized roll doesn't need
+// its own layout code. Plain black-on-white, no anti-aliasing smoothing
+// on the QR image - a label printer threshold can't tolerate the gray
+// edges that would otherwise corrupt a QR module.
+//
+// Description and price always show if present - everything else (Size,
+// then Brand, in that priority order) only shows if there's vertical room
+// left over after those two, so a small label stays uncluttered and a
+// bigger one fills in more detail rather than forcing a fixed field set
+// that either wastes blank space or has to shrink to cram in.
+async function buildLabelCanvas(record) {
+  const { width, height } = labelPixelSize();
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, width, height); // fills the real, full-size canvas - before any shift below
+  ctx.fillStyle = '#000';
+
+  // Settings -> Label Printer's "Shift Left" calibration knob - compensates
+  // for the printer's actual paper being narrower than Width (mm) above
+  // without needing an exact measurement: everything drawn after this
+  // translate lands that many px further left, so whatever's cut off past
+  // the real paper's right edge (previously the QR, pinned to the right)
+  // moves into the printable area instead. The canvas's own declared
+  // width/height sent to the printer is unchanged - only where content
+  // sits within it shifts.
+  const offsetMm = parseFloat(getSettings().labelOffsetMm) || 0;
+  const offsetPx = Math.round(offsetMm * phomemo.PX_PER_MM);
+  if (offsetPx) ctx.translate(-offsetPx, 0);
+
+  const description = record.item || record.name || '';
+  const price = record.price ? `$${record.price}` : '';
+  const code = record.uniqueId || record.id;
+
+  const descFontPx = Math.max(10, Math.round(width / 16));
+  const lineHeight = Math.round(descFontPx * 1.1);
+  const priceFontPx = Math.max(14, Math.round(width / 10.5));
+  const margin = Math.max(4, Math.round(width / 40));
+
+  // As large as legibly possible, capped two ways: by the label's height
+  // (minus top/bottom margin) and by roughly half its width, so the text
+  // column on the left never gets crushed to nothing. The margin on every
+  // side isn't just visual breathing room - a QR code needs that white
+  // "quiet zone" around it to scan reliably at all, so this also keeps it
+  // off the label's physical edge (where a die-cut label is most likely
+  // to be trimmed slightly short or peel oddly).
+  const qrSize = Math.max(24, Math.min(height - margin * 2, Math.round(width / 2) - margin));
+  const qrX = width - margin - qrSize;
+  const qrY = Math.round((height - qrSize) / 2);
+  const textColWidth = Math.max(10, qrX - margin * 2);
+
+  ctx.font = `bold ${descFontPx}px sans-serif`;
+  const descLines = wrapTextLines(ctx, description, textColWidth, 3);
+  const priceGap = Math.round(priceFontPx * 0.3);
+  const usedByCore = descLines.length * lineHeight + priceGap + priceFontPx;
+  let remaining = (height - margin * 2) - usedByCore;
+
+  // Not bold - secondary to the description/price, and measured with
+  // wrapTextLines(..., 1) purely for its ellipsis-if-too-long handling,
+  // not because a Size or Brand value is expected to wrap.
+  ctx.font = `${descFontPx}px sans-serif`;
+  const extraLines = [];
+  for (const [label, value] of [['Size', record.size], ['Brand', record.brand]]) {
+    if (!value || remaining < lineHeight) continue;
+    const [line] = wrapTextLines(ctx, `${label}: ${value}`, textColWidth, 1);
+    extraLines.push(line);
+    remaining -= lineHeight;
+  }
+
+  const textBlockHeight = usedByCore + extraLines.length * lineHeight;
+
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  let y = Math.max(margin, Math.round((height - textBlockHeight) / 2));
+  ctx.font = `bold ${descFontPx}px sans-serif`;
+  for (const line of descLines) {
+    ctx.fillText(line, margin, y);
+    y += lineHeight;
+  }
+  ctx.font = `${descFontPx}px sans-serif`;
+  for (const line of extraLines) {
+    ctx.fillText(line, margin, y);
+    y += lineHeight;
+  }
+
+  ctx.font = `bold ${priceFontPx}px sans-serif`;
+  ctx.fillText(price, margin, y + priceGap);
+
+  const qrDataUrl = await QRCode.toDataURL(code, { width: qrSize * 2, margin: 0 });
+  const qrImg = await loadImageFromSrc(qrDataUrl);
+  ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
+
+  return canvas;
+}
+
 // The sticker encodes the item's uniqueId (not a Venmo-style link) - that's
 // exactly what a rescan of the printed sticker later looks up via
 // findByUniqueId, same as scanning the item's original tag would. Shown
@@ -1365,6 +1634,14 @@ btnVenmoMatch.addEventListener('click', async () => {
 // Print Master (confirmed, on iOS, not to accept incoming shares) or any
 // other app registers as a share target - Print Master can then import
 // the saved image from Photos using its own editor's image-import option.
+//
+// When a Phomemo printer is connected (js/phomemo.js - Chrome only), this
+// also builds a proper label preview (description + QR + price), in
+// addition to - not instead of - the on-screen QR above, so the existing
+// save/share fallback still works unchanged if no printer is paired.
+// It does NOT print automatically - a bad print wastes a real physical
+// label with no way to undo it, so Confirm Print (shown only once a
+// preview is ready) is a required, separate tap.
 btnPrintSticker.addEventListener('click', async () => {
   if (!matchedRecord) return;
   const code = matchedRecord.uniqueId || matchedRecord.id;
@@ -1386,8 +1663,41 @@ btnPrintSticker.addEventListener('click', async () => {
         navigator.share({ files: [file], title: `Sticker - ${matchedRecord.item || matchedRecord.name || code}` }).catch(() => {});
       }
     }
+
+    // Built and shown every time, whether or not a printer is connected -
+    // useful on its own for checking the layout (wrapping, QR size at the
+    // current Settings -> Label Printer size) before ever pairing hardware.
+    try {
+      const label = await buildLabelCanvas(matchedRecord);
+      labelPreview.src = label.toDataURL('image/png');
+      labelPreview.classList.remove('hidden');
+      labelPreviewHint.classList.remove('hidden');
+
+      pendingLabelCanvas = label;
+      updatePrintButtonState();
+    } catch (printErr) {
+      toast('Label printer error: ' + printErr.message, 'error');
+    }
   } catch (err) {
     toast('Print sticker error: ' + err.message, 'error');
+  }
+});
+
+btnConfirmPrint.addEventListener('click', async () => {
+  if (!pendingLabelCanvas || !phomemo.isConnected()) return;
+  btnConfirmPrint.disabled = true;
+  try {
+    await phomemo.printCanvas(pendingLabelCanvas);
+    toast('Printed to label printer', 'success');
+    // One-shot per preview - printing the exact same pendingLabelCanvas
+    // again by accident (e.g. a stray double-tap) would waste another
+    // real label, so require a fresh Preview/Print Sticker click (a
+    // fresh preview) before this can fire again.
+    pendingLabelCanvas = null;
+  } catch (err) {
+    toast('Label printer error: ' + err.message, 'error');
+  } finally {
+    updatePrintButtonState();
   }
 });
 
@@ -1450,7 +1760,19 @@ async function attachVisualData(data) {
 
 btnSave.addEventListener('click', async () => {
   const data = await attachVisualData(collectFormData());
-  if (!data.name && !data.price) { toast('Add a name or price first', 'error'); return; }
+
+  // toast() renders as a full-width banner across the top of the screen
+  // (see #toast in css/style.css), not a small pill - exactly the warning
+  // banner wanted here. Required on both a new save and an edit - there's
+  // no reason an edit should be allowed to leave these blank either.
+  const missing = [];
+  if (!data.uniqueId) missing.push('ID');
+  if (!data.item) missing.push('Item');
+  if (!data.price) missing.push('Price');
+  if (missing.length) {
+    toast(`Fill in ${missing.join(', ')} before saving`, 'error');
+    return;
+  }
 
   const editId = resultCard.dataset.editId || null;
   if (!editId) {
@@ -2466,7 +2788,15 @@ if (getLocationCode()) {
     document.getElementById('app-title').textContent = cachedBusinessName;
   }
   fetch('/api/square/connection', { headers: locationHeaders() })
-    .then(res => res.ok ? res.json() : null)
+    .then(res => {
+      // A saved code the server doesn't recognize (typo, or a production
+      // code on a local dev server) otherwise fails every request silently.
+      if (res.status === 401) {
+        openAideLoginModal(`The saved location code "${getLocationCode()}" isn't valid here. Enter a valid code to continue.`);
+        return null;
+      }
+      return res.ok ? res.json() : null;
+    })
     .then(data => {
       if (data?.connected && data.businessName) {
         if (data.businessName !== cachedBusinessName) {
@@ -2507,7 +2837,10 @@ function updateSettingsLinkVisibility() {
 }
 updateSettingsLinkVisibility();
 
-function openAideLoginModal() {
+function openAideLoginModal(errorMessage) {
+  const errorEl = document.getElementById('aide-login-error');
+  errorEl.textContent = errorMessage || '';
+  errorEl.classList.toggle('hidden', !errorMessage);
   aideLoginModal.classList.remove('hidden');
 }
 function closeAideLoginModal() {

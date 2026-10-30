@@ -21,6 +21,16 @@
         </svg>
         <span id="queue-badge" class="queue-badge hidden"></span>
       </button>
+      <!-- Pairing is per-tab (Web Bluetooth has no cross-reload persistence
+           worth relying on) and only works in Chrome (Android or desktop) -
+           Safari/iOS has no Web Bluetooth at all. Not connected -> Print
+           Sticker falls back to the old save/share-into-Print-Master flow. -->
+      <button class="icon-btn" id="btn-printer-connect" title="Connect label printer" type="button" style="position:relative;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>
+        </svg>
+        <span id="printer-connected-dot" class="queue-badge hidden" style="background:#16a34a;"></span>
+      </button>
       <a href="/settings" class="icon-btn" id="link-settings" title="Settings">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
@@ -38,12 +48,45 @@
       <button class="modal-close" id="btn-aide-login-close" title="Close">✕</button>
       <h2>Vendor Aide Login</h2>
       <p>Enter the location code you were given to start scanning and selling.</p>
+      <p id="aide-login-error" class="hidden" style="color:var(--danger);font-weight:600;font-size:0.9rem;"></p>
       <div class="field">
         <label for="aide-location-code">Location Code</label>
         <input type="text" id="aide-location-code" placeholder="e.g. AB12CD34" style="text-transform:uppercase;">
       </div>
       <button class="btn btn-primary" id="btn-aide-login-submit" type="button">Log In</button>
       <p style="margin-top:1rem;font-size:0.85rem;color:var(--muted);">Setting up a new location, or need full Settings access? <a href="/settings">Go to Settings</a> instead.</p>
+    </div>
+  </div>
+
+  <!-- Label printer: connection + label size together, on this page rather
+       than in Settings - navigating to a different page is a full reload,
+       which drops the Bluetooth connection (true in every browser, not
+       fixable from script), so anything printer-related that would make
+       someone leave this page lives here instead. -->
+  <div id="printer-modal" class="modal hidden">
+    <div class="modal-content">
+      <button class="modal-close" id="btn-printer-modal-close" title="Close">✕</button>
+      <h2>Label Printer</h2>
+      <p id="printer-modal-status" class="match-row" style="font-weight:600;"></p>
+      <button class="btn btn-primary" id="btn-printer-modal-connect" type="button">Connect</button>
+      <h3 style="margin-top:1.5rem;">Label Size</h3>
+      <p style="font-size:0.85rem;color:var(--muted);">Matches whatever roll is loaded - 40x30mm is the M120's default roll. Width caps at 48mm (the print head's physical 384-dot width).</p>
+      <div class="field" style="display:flex;gap:0.5rem;align-items:flex-end;">
+        <div style="flex:1;">
+          <label for="printer-label-width-mm">Width (mm)</label>
+          <input type="number" id="printer-label-width-mm" min="8" max="48" step="1" placeholder="40">
+        </div>
+        <div style="flex:1;">
+          <label for="printer-label-height-mm">Height (mm)</label>
+          <input type="number" id="printer-label-height-mm" min="8" max="200" step="1" placeholder="30">
+        </div>
+      </div>
+      <div class="field" style="margin-top:0.75rem;">
+        <label for="printer-label-offset-mm">Shift Left (mm)</label>
+        <input type="number" id="printer-label-offset-mm" min="-10" max="10" step="0.5" placeholder="0">
+      </div>
+      <p style="font-size:0.8rem;color:var(--muted);">If printed labels get a slice cut off on the right, the printer's actual paper is likely narrower than Width above - shift everything left by a bit (try 1-2mm) rather than fighting for an exact width measurement. Negative shifts right instead.</p>
+      <button class="btn btn-secondary" id="btn-printer-modal-save-size" type="button" style="margin-top:0.75rem;">Save Label Size</button>
     </div>
   </div>
 
@@ -129,12 +172,21 @@
       <img id="venmo-qr" class="match-photo hidden" alt="Venmo payment QR code">
       <img id="sticker-qr" class="match-photo hidden" alt="Item sticker QR code">
       <div id="sticker-qr-hint" class="hidden" style="font-size:0.8rem;color:var(--muted);text-align:center;margin-top:-0.5rem;">Long-press (or right-click) the QR code above and choose Save/Download, then import it into Print Master.</div>
+      <img id="label-preview" class="label-preview hidden" alt="Label printer preview">
+      <div id="label-preview-hint" class="hidden" style="font-size:0.8rem;color:var(--muted);text-align:center;margin-top:-0.5rem;margin-bottom:0.75rem;">Preview of what prints to the label printer (Settings &rarr; Label Printer sets the size).</div>
+      <!-- Printing is a real, physical, wasted label if the preview above
+           was wrong, so Print stays disabled (js/app.js) until both a
+           preview has been built AND a printer is connected - there's
+           always a look-before-you-print step rather than Preview/Print
+           Sticker silently sending the job on its own click. -->
+      <button class="btn btn-primary" id="btn-confirm-print" type="button" disabled style="margin-bottom:0.25rem;">Print</button>
+      <p id="print-warning" class="hidden" style="font-size:0.8rem;color:var(--danger,#dc2626);text-align:center;margin:0 0 0.75rem;">Connect the label printer (tap the printer icon above) before printing.</p>
       <div class="result-actions">
         <button class="btn btn-primary" id="btn-sell-one">Sell 1</button>
         <button class="btn btn-secondary" id="btn-add-to-cart">Add to Cart</button>
         <button class="btn btn-secondary" id="btn-square-match">Send to Square POS (this item)</button>
         <button class="btn btn-secondary" id="btn-venmo-match">Venmo QR (this item)</button>
-        <button class="btn btn-secondary hidden" id="btn-print-sticker">Print Sticker</button>
+        <button class="btn btn-secondary hidden" id="btn-print-sticker">Preview/Print Sticker</button>
         <button class="btn btn-secondary" id="btn-edit-match">Edit</button>
         <button class="btn btn-secondary" id="btn-not-a-match">Not a match — New Item</button>
       </div>
