@@ -166,6 +166,17 @@
           <button class="btn btn-outline" id="btn-save-square-location" type="button" style="margin-top:0.5rem;">Save</button>
           <div class="save-notice" id="square-location-notice">✓ Saved</div>
         </div>
+
+        <div class="settings-field" style="margin-top:1.25rem;">
+          <label for="square-sync-start">Sync Sales from Square</label>
+          <p style="font-size:0.8rem;color:var(--muted,#8a7060);margin:0 0 0.4rem;">Pulls completed sales made directly through Square (e.g. the phone "Send to Square POS" flow) for a date range and adds any that aren't already recorded here. Cash and Venmo sales already sync separately and won't be affected. Terminal sales made through this app after today won't be double-counted - but older Terminal sales from before this feature might be, if you sync a range that includes them.</p>
+          <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+            <input type="date" id="square-sync-start" style="flex:1;min-width:140px;">
+            <input type="date" id="square-sync-end" style="flex:1;min-width:140px;">
+          </div>
+          <button class="btn btn-outline" id="btn-sync-square-sales" type="button" style="margin-top:0.5rem;">Sync Sales from Square</button>
+          <div id="square-sync-status" style="margin-top:0.5rem;color:var(--muted,#8a7060);font-size:0.85rem;"></div>
+        </div>
       </div>
     </div>
 
@@ -410,6 +421,43 @@
         showSaveNotice('square-location-notice');
       } catch (err) {
         alert('Error: ' + err.message);
+      }
+    });
+
+    // Default to the last 30 days - staff can widen the range for an
+    // older historical gap (e.g. sales from before Square was even
+    // connected in this app).
+    {
+      const today = new Date();
+      const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+      document.getElementById('square-sync-end').value = today.toISOString().slice(0, 10);
+      document.getElementById('square-sync-start').value = thirtyDaysAgo.toISOString().slice(0, 10);
+    }
+
+    document.getElementById('btn-sync-square-sales').addEventListener('click', async () => {
+      const startDate = document.getElementById('square-sync-start').value;
+      const endDate = document.getElementById('square-sync-end').value;
+      const statusEl = document.getElementById('square-sync-status');
+      if (!startDate || !endDate) {
+        statusEl.textContent = 'Pick a start and end date first.';
+        return;
+      }
+      const btn = document.getElementById('btn-sync-square-sales');
+      btn.disabled = true;
+      statusEl.textContent = 'Syncing...';
+      try {
+        const res = await fetch('/api/square/sync-sales', {
+          method: 'POST',
+          headers: locationHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ startDate, endDate })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to sync');
+        statusEl.textContent = `Imported ${data.imported} new sale${data.imported === 1 ? '' : 's'}, ${data.skipped} already recorded.`;
+      } catch (err) {
+        statusEl.textContent = err.message;
+      } finally {
+        btn.disabled = false;
       }
     });
 

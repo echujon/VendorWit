@@ -38,6 +38,7 @@ import * as squareOauthCallback from './functions/api/square/oauth/callback.js';
 import * as squareConnection from './functions/api/square/connection.js';
 import * as squareLocations from './functions/api/square/locations.js';
 import * as squareSetLocation from './functions/api/square/set-location.js';
+import * as squareSyncSales from './functions/api/square/sync-sales.js';
 import * as squareDeviceCodes from './functions/api/square/device-codes.js';
 import * as squareDeviceCodesStatus from './functions/api/square/device-codes-status.js';
 import * as squareCashPayment from './functions/api/square/cash-payment.js';
@@ -170,6 +171,9 @@ export default {
     }
     if (pathname === '/api/square/set-location' && method === 'POST') {
       return squareSetLocation.onRequestPost(context);
+    }
+    if (pathname === '/api/square/sync-sales' && method === 'POST') {
+      return squareSyncSales.onRequestPost(context);
     }
     if (pathname === '/api/square/device-codes' && method === 'POST') {
       return squareDeviceCodes.onRequestPost(context);

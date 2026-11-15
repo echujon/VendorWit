@@ -1,4 +1,4 @@
-import { getRecords, getCachedRecords, saveRecord, updateRecord, deleteRecord, exportCSV, getSettings, saveSettings, getClientId, getLocationCode, setLocationCode, getRole, setRole, findByUniqueId, findByVisualMatch, createSale, getSales } from './storage.js';
+import { getRecords, getCachedRecords, saveRecord, updateRecord, getSettings, saveSettings, getClientId, getLocationCode, setLocationCode, getRole, setRole, findByUniqueId, findByVisualMatch, createSale, getSales } from './storage.js';
 import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0/+esm';
 import QRCode from 'https://cdn.jsdelivr.net/npm/qrcode@1.5.4/+esm';
 import * as phomemo from './phomemo.js';
@@ -38,8 +38,6 @@ const ocrRawSelectable = document.getElementById('ocr-raw-selectable');
 const otherFieldsLabel = document.getElementById('other-fields-label');
 const otherFieldsDisplay = document.getElementById('other-fields-display');
 const matchOtherFields = document.getElementById('match-other-fields');
-const recordsList = document.getElementById('records-list');
-const recordsSearchInput = document.getElementById('records-search');
 const scanOverlay = document.querySelector('.scan-overlay');
 const btnScanModeOcr = document.getElementById('btn-scan-mode-ocr');
 const btnScanModeImage = document.getElementById('btn-scan-mode-image');
@@ -150,8 +148,6 @@ const btnUseSelection = document.getElementById('btn-use-selection');
 const btnSave = document.getElementById('btn-save');
 const btnSquare = document.getElementById('btn-square');
 const btnDiscard = document.getElementById('btn-discard');
-const btnExport = document.getElementById('btn-export');
-const btnSeedTest = document.getElementById('btn-seed-test');
 const fileInput = document.getElementById('file-input');
 
 // --- Camera ---
@@ -892,6 +888,7 @@ function renderOtherFields(otherFields, labelEl, displayEl) {
 function showNewItemForm(rawText, prefill = {}) {
   const parsed = Object.keys(prefill).length ? prefill : (parseTicketTag(rawText) || parseScannedText(rawText));
 
+  clearRequiredFieldErrors();
   resultCardTitle.textContent = prefill.id ? 'Edit Item' : 'New Item';
   ocrRawSelectable.textContent = rawText || '';
   fieldUniqueId.value = parsed.uniqueId || prefill.uniqueId || '';
@@ -1325,7 +1322,7 @@ async function sellOne() {
   await updateRecord(matchedRecord.id, { quantity: String(newQty) });
   matchedRecord = { ...matchedRecord, quantity: String(newQty) };
   document.getElementById('match-quantity').textContent = String(newQty);
-  await renderRecords();
+  await getRecords();
 
   // Sell 1 is a one-tap bypass for when staff don't want to pick a
   // payment method (Cash/Venmo/Terminal) first - it still records into
@@ -1758,6 +1755,16 @@ async function attachVisualData(data) {
   };
 }
 
+const REQUIRED_FIELDS = [fieldUniqueId, fieldItem, fieldPrice];
+
+function clearRequiredFieldErrors() {
+  REQUIRED_FIELDS.forEach(input => input.classList.remove('field-error'));
+}
+
+REQUIRED_FIELDS.forEach(input => input.addEventListener('input', () => {
+  if (input.value.trim()) input.classList.remove('field-error');
+}));
+
 btnSave.addEventListener('click', async () => {
   const data = await attachVisualData(collectFormData());
 
@@ -1765,12 +1772,17 @@ btnSave.addEventListener('click', async () => {
   // (see #toast in css/style.css), not a small pill - exactly the warning
   // banner wanted here. Required on both a new save and an edit - there's
   // no reason an edit should be allowed to leave these blank either.
-  const missing = [];
-  if (!data.uniqueId) missing.push('ID');
-  if (!data.item) missing.push('Item');
-  if (!data.price) missing.push('Price');
+  const missing = [
+    [fieldUniqueId, 'ID', data.uniqueId],
+    [fieldItem, 'Item', data.item],
+    [fieldPrice, 'Price', data.price]
+  ].filter(([, , value]) => !value);
+  clearRequiredFieldErrors();
   if (missing.length) {
-    toast(`Fill in ${missing.join(', ')} before saving`, 'error');
+    missing.forEach(([input]) => input.classList.add('field-error'));
+    missing[0][0].focus();
+    missing[0][0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+    toast(`Fill in ${missing.map(([, label]) => label).join(', ')} before saving`, 'error');
     return;
   }
 
@@ -1789,7 +1801,7 @@ btnSave.addEventListener('click', async () => {
     await saveRecord(data);
   }
   resetScanArea();
-  await renderRecords();
+  await getRecords();
   toast('Saved!', 'success');
 });
 
@@ -1814,86 +1826,10 @@ function resetScanArea() {
   scanPlaceholder.style.display = 'flex';
 }
 
-// --- Records ---
-let recordsSort = { field: 'date', dir: 'desc' };
-let recordsSearchQuery = '';
-const ITEM_STATUSES = ['holding', 'returned', 'sold'];
-
-function recordMatchesSearch(r, query) {
-  if (!query) return true;
-  const haystack = [r.uniqueId, r.name, r.item, r.brand, r.size, r.color, r.subVendor, r.tagColor, r.location]
-    .join(' ').toLowerCase();
-  return haystack.includes(query);
-}
-
+// --- Records (list lives on /records; tapping a row there opens it here) ---
 function statusLabel(status) {
   const s = status || 'holding';
   return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-function renderRecordsList(records) {
-  const query = recordsSearchQuery.trim().toLowerCase();
-  const filtered = records.filter(r => recordMatchesSearch(r, query));
-
-  if (!records.length) {
-    recordsList.innerHTML = '<div class="empty-state">No records yet — scan a tag to get started.</div>';
-    return;
-  }
-  if (!filtered.length) {
-    recordsList.innerHTML = '<div class="empty-state">No records match your search.</div>';
-    return;
-  }
-
-  const rows = sortRows(filtered, recordsSort, {
-    id: r => r.uniqueId || '',
-    item: r => r.item || r.name || '',
-    subVendor: r => r.subVendor || '',
-    price: r => parseFloat(r.price) || 0,
-    quantity: r => parseInt(r.quantity, 10) || 0,
-    location: r => r.location || '',
-    date: r => new Date(r.createdAt).getTime() || 0,
-    status: r => r.status || 'holding'
-  });
-
-  recordsList.innerHTML = `
-    <div class="sales-report-table-wrap">
-      <table class="sales-report-table">
-        <thead><tr>
-          ${sortTh('ID', 'id', recordsSort, 'records')}
-          ${sortTh('Item', 'item', recordsSort, 'records')}
-          ${sortTh('Sub-vendor', 'subVendor', recordsSort, 'records')}
-          ${sortTh('Price', 'price', recordsSort, 'records')}
-          ${sortTh('Qty', 'quantity', recordsSort, 'records')}
-          ${sortTh('Location', 'location', recordsSort, 'records')}
-          ${sortTh('Date', 'date', recordsSort, 'records')}
-          ${sortTh('Status', 'status', recordsSort, 'records')}
-          <th></th>
-        </tr></thead>
-        <tbody>${rows.map(r => { const status = r.status || 'holding'; return `
-          <tr class="record-row" data-id="${r.id}">
-            <td>${esc(r.uniqueId || '—')}</td>
-            <td>${esc(r.item || r.name || '(no name)')}</td>
-            <td>${esc(r.subVendor || '—')}</td>
-            <td>${r.price ? `$${esc(r.price)}` : '—'}</td>
-            <td>${esc(r.quantity || '—')}</td>
-            <td>${esc(r.location || '—')}</td>
-            <td>${new Date(r.createdAt).toLocaleDateString()}</td>
-            <td>
-              <select class="status-select status-${status}" data-id="${r.id}">
-                ${ITEM_STATUSES.map(s => `<option value="${s}" ${s === status ? 'selected' : ''}>${statusLabel(s)}</option>`).join('')}
-              </select>
-            </td>
-            <td><button class="record-btn delete" data-id="${r.id}" title="Delete">✕</button></td>
-          </tr>
-        `; }).join('')}</tbody>
-      </table>
-    </div>
-  `;
-}
-
-async function renderRecords() {
-  const records = await getRecords();
-  renderRecordsList(records);
 }
 
 function viewRecord(id) {
@@ -1904,64 +1840,6 @@ function viewRecord(id) {
   lastBarcodeValue = '';
   showMatchCard(record, 'saved');
 }
-
-recordsList.addEventListener('click', async e => {
-  const th = e.target.closest('th.sortable');
-  if (th && th.dataset.table === 'records') {
-    toggleSort(recordsSort, th.dataset.field);
-    renderRecordsList(getCachedRecords());
-    return;
-  }
-
-  if (e.target.closest('.status-select')) return;
-
-  const btn = e.target.closest('.record-btn');
-  const row = e.target.closest('.record-row');
-  if (!row) return;
-  const id = row.dataset.id;
-
-  if (btn?.classList.contains('delete')) {
-    await deleteRecord(id);
-    await renderRecords();
-    return;
-  }
-
-  if (!btn) {
-    viewRecord(id);
-  }
-});
-
-recordsList.addEventListener('change', async e => {
-  const select = e.target.closest('.status-select');
-  if (!select) return;
-  const id = select.dataset.id;
-  const newStatus = select.value;
-  const record = getCachedRecords().find(r => r.id === id);
-  const oldStatus = (record && record.status) || 'holding';
-
-  // Sold/Returned are "settled" states - changing away from either is
-  // more likely to be a misclick than Holding -> anything, so confirm
-  // before actually moving away from them.
-  if ((oldStatus === 'sold' || oldStatus === 'returned') && newStatus !== oldStatus) {
-    const confirmed = window.confirm(`This item is marked "${statusLabel(oldStatus)}". Change it to "${statusLabel(newStatus)}"?`);
-    if (!confirmed) {
-      select.value = oldStatus;
-      return;
-    }
-  }
-
-  try {
-    await updateRecord(id, { status: newStatus });
-  } catch (err) {
-    toast('Failed to update status: ' + err.message, 'error');
-  }
-  renderRecordsList(getCachedRecords());
-});
-
-recordsSearchInput.addEventListener('input', () => {
-  recordsSearchQuery = recordsSearchInput.value;
-  renderRecordsList(getCachedRecords());
-});
 
 // --- Cart (multi-item sale, no inventory change until Complete Sale) ---
 function cartAvailableFor(id) {
@@ -2066,7 +1944,7 @@ async function decrementInventoryForItems(items) {
     const currentQty = parseInt(record.quantity, 10) || 0;
     await updateRecord(item.id, { quantity: String(Math.max(0, currentQty - item.quantity)), status: 'sold' });
   }
-  await renderRecords();
+  await getRecords();
 }
 
 // The one place every completed-sale path (Cash, Venmo, Square Terminal
@@ -2076,10 +1954,10 @@ async function decrementInventoryForItems(items) {
 // fails, the sale still isn't lost from the customer's perspective
 // (inventory already moved) - it just won't show up in the report, which
 // is surfaced as a toast rather than blocking the sale.
-async function recordSale(items, total, paymentMethod) {
+async function recordSale(items, total, paymentMethod, squareOrderId = null) {
   await decrementInventoryForItems(items);
   try {
-    await createSale({ items, total: total.toFixed(2), paymentMethod });
+    await createSale({ items, total: total.toFixed(2), paymentMethod, squareOrderId });
   } catch (err) {
     console.warn('Failed to record sale for reporting:', err);
     toast('Sale completed, but failed to log it for reporting', 'error');
@@ -2344,35 +2222,6 @@ function closeQueueModal() {
 btnOpenQueue.addEventListener('click', openQueueModal);
 btnQueueModalClose.addEventListener('click', closeQueueModal);
 
-// Generic sortable-table helpers - used by the Records table above and
-// (as a separately-duplicated copy, see sales-report/app.js) by the
-// standalone Sales Report page.
-function compareForSort(a, b) {
-  if (typeof a === 'number' && typeof b === 'number') return a - b;
-  return String(a).localeCompare(String(b));
-}
-
-function sortRows(rows, state, accessors) {
-  const getter = accessors[state.field];
-  if (!getter) return rows;
-  const sorted = [...rows].sort((r1, r2) => compareForSort(getter(r1), getter(r2)));
-  return state.dir === 'desc' ? sorted.reverse() : sorted;
-}
-
-function toggleSort(state, field) {
-  if (state.field === field) {
-    state.dir = state.dir === 'asc' ? 'desc' : 'asc';
-  } else {
-    state.field = field;
-    state.dir = 'desc';
-  }
-}
-
-function sortTh(label, field, state, table) {
-  const arrow = state.field === field ? `<span class="sort-arrow">${state.dir === 'asc' ? '▲' : '▼'}</span>` : '';
-  return `<th class="sortable" data-table="${table}" data-field="${field}">${esc(label)}${arrow}</th>`;
-}
-
 // Client-driven fallback for freeing a terminal: the server-side paths
 // (webhook, status-poll) assume Square echoes device_options.device_id back
 // in the checkout response/webhook payload - if that's ever wrong for some
@@ -2533,6 +2382,7 @@ async function sendCheckoutForSale(saleId, deviceId) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Terminal checkout failed');
     sale.checkoutId = data.checkoutId;
+    sale.squareOrderId = data.squareOrderId || null;
     sale.deviceId = deviceId;
     sale.status = 'waiting-for-card';
     sale.cardStatus = data.status;
@@ -2567,7 +2417,7 @@ async function pollPendingSale(saleId, attemptsLeft) {
 
     if (data.status === 'COMPLETED') {
       notifyTerminalFreedClientSide(sale.deviceId);
-      await recordSale(sale.items, sale.total, 'card');
+      await recordSale(sale.items, sale.total, 'card', sale.squareOrderId);
       toast('Sale complete!', 'success');
       removePendingSale(saleId);
       return;
@@ -2724,24 +2574,7 @@ btnCamera.addEventListener('click', () => {
   else startCamera();
 });
 btnUpload.addEventListener('click', () => fileInput.click());
-btnExport.addEventListener('click', async () => { exportCSV(await getRecords()); toast('CSV downloaded', 'success'); });
 
-// --- Test data seeding (local dev only) ---
-const isLocalEnv = ['localhost', '127.0.0.1'].includes(window.location.hostname);
-if (isLocalEnv) {
-  btnSeedTest.style.display = '';
-}
-
-btnSeedTest.addEventListener('click', async () => {
-  const sampleRecords = [
-    { uniqueId: '', name: 'Kitty Button', price: '8.00', quantity: '5', location: 'Bin A' },
-    { uniqueId: '', name: 'Star Button', price: '6.50', quantity: '3', location: 'Bin A' },
-    { uniqueId: '', name: 'Floral Button', price: '10.00', quantity: '2', location: 'Bin B' }
-  ];
-  for (const record of sampleRecords) await saveRecord(record);
-  await renderRecords();
-  toast('Seeded 3 test records', 'success');
-});
 
 // --- Helpers ---
 function showStatus(msg) {
@@ -2769,7 +2602,14 @@ function esc(str) {
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
 }
-renderRecords();
+// /?record=<id> comes from tapping a row on the Records page.
+getRecords().then(() => {
+  const params = new URLSearchParams(location.search);
+  const recordId = params.get('record');
+  if (!recordId) return;
+  history.replaceState(null, '', location.pathname);
+  viewRecord(recordId);
+}).catch(() => {});
 scanOverlay.style.display = 'none';
 scanPlaceholder.style.display = 'flex';
 video.classList.add('hidden');

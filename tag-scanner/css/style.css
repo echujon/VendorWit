@@ -311,6 +311,11 @@ main { flex: 1; padding: 1.25rem; padding-bottom: 5rem; display: flex; flex-dire
   outline: none;
   border-color: var(--brand);
 }
+.field input.field-error, .field input.field-error:focus {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 20%, transparent);
+}
+.field:has(input.field-error) label { color: var(--danger); }
 
 
 .result-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; }
@@ -343,6 +348,11 @@ main { flex: 1; padding: 1.25rem; padding-bottom: 5rem; display: flex; flex-dire
 #cart-total-display { font-weight: 700; color: var(--brand-dark); font-size: 0.95rem; }
 
 #records-list, #review-cart-list { padding: 0.5rem 0; max-height: 320px; overflow-y: auto; width: 100%; }
+.records-page #records-list { max-height: none; }
+.records-page { margin: 1rem; }
+.records-page h2 { flex-wrap: wrap; gap: 0.5rem; }
+.page-links { display: flex; gap: 0.5rem; }
+.page-links .btn { text-decoration: none; justify-content: center; }
 
 .record-item {
   display: flex;

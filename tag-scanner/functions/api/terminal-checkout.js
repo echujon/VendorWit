@@ -156,7 +156,7 @@ export async function onRequestPost(context) {
 
   context.waitUntil?.(notifyTerminalStatus(env, deviceId, 'busy', appLocationId));
 
-  return json({ checkoutId: data.checkout.id, status: data.checkout.status });
+  return json({ checkoutId: data.checkout.id, status: data.checkout.status, squareOrderId: orderData.order.id });
 }
 
 function json(data, status = 200) {

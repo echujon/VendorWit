@@ -281,18 +281,11 @@
       </div>
     </div>
 
-    <!-- Records -->
-    <div id="records-section">
-      <h2>
-        Records
-        <span style="display:flex;gap:0.5rem;">
-          <button class="btn btn-outline" id="btn-seed-test" style="display:none;font-size:0.8rem;padding:0.35rem 0.75rem;">Seed Test Data</button>
-          <a class="btn btn-outline" href="/sales-report" style="font-size:0.8rem;padding:0.35rem 0.75rem;text-decoration:none;display:inline-flex;align-items:center;">Sales Report</a>
-          <button class="btn btn-outline" id="btn-export" style="font-size:0.8rem;padding:0.35rem 0.75rem;">Export CSV</button>
-        </span>
-      </h2>
-      <input type="text" id="records-search" class="records-search" placeholder="Search records by ID, name, brand, sub-vendor, location...">
-      <div id="records-list"></div>
+    <!-- Records and the Sales Report live on their own pages (/records,
+         /sales-report) so this page stays focused on scanning. -->
+    <div class="page-links">
+      <a class="btn btn-secondary" href="/records">Records</a>
+      <a class="btn btn-secondary" href="/sales-report">Sales Report</a>
     </div>
   </main>
 

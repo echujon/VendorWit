@@ -15,6 +15,7 @@ function rowToSale(row) {
     total: row.total,
     paymentMethod: row.payment_method,
     items: JSON.parse(row.items_json),
+    squareOrderId: row.square_order_id || null,
     createdAt: row.created_at
   };
 }
@@ -43,9 +44,9 @@ export async function onRequestPost(context) {
 
   const id = crypto.randomUUID();
   await env.DB.prepare(`
-    INSERT INTO sales (id, location_id, total, payment_method, items_json)
-    VALUES (?, ?, ?, ?, ?)
-  `).bind(id, loc.locationId, String(body.total), body.paymentMethod, JSON.stringify(body.items)).run();
+    INSERT INTO sales (id, location_id, total, payment_method, items_json, square_order_id)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).bind(id, loc.locationId, String(body.total), body.paymentMethod, JSON.stringify(body.items), body.squareOrderId || null).run();
 
   const row = await env.DB.prepare('SELECT * FROM sales WHERE id = ?').bind(id).first();
   return json(rowToSale(row));

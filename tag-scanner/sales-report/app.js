@@ -39,7 +39,7 @@ let salesReportView = 'sale'; // 'sale' or 'item'
 let soldRowsForExport = [];
 let unsoldRowsForExport = [];
 
-const PAYMENT_METHOD_LABELS = { cash: 'Cash', venmo: 'Venmo', card: 'Card (Terminal)', other: 'Other / Quick Sale' };
+const PAYMENT_METHOD_LABELS = { cash: 'Cash', venmo: 'Venmo', card: 'Card (Terminal)', other: 'Other / Quick Sale', square: 'Square (synced)' };
 const NO_SUB_VENDOR = '(no sub-vendor)';
 
 function paymentMethodLabel(method) {
